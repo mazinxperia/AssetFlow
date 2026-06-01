@@ -1,17 +1,18 @@
 # Production Dockerfile for Frontend
-FROM node:18-alpine as build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+# Copy package files first for better Docker layer caching
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
 
 # Build application
-RUN yarn build
+ENV REACT_APP_BACKEND_URL=
+RUN npm run build
 
 # Production stage - serve with nginx
 FROM nginx:alpine
