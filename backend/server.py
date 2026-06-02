@@ -3,7 +3,7 @@ AssetFlow - Internal IT Asset Lifecycle Management System
 Backend API Server
 """
 
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
@@ -83,9 +83,20 @@ settings_collection = db["settings"]
 reset_tokens_collection = db["reset_tokens"]
 files_collection = db["files"]
 subscriptions_collection = db["subscriptions"]
+music_tracks_collection = db["music_tracks"]
 
 # Scheduler for scheduled tasks
 scheduler = AsyncIOScheduler()
+
+MUSIC_MAX_FILE_SIZE = 50 * 1024 * 1024
+MUSIC_CONTENT_TYPES = {"audio/mpeg", "audio/mp3", "audio/x-mpeg", "audio/x-mp3"}
+
+def looks_like_mp3(contents: bytes) -> bool:
+    if contents.startswith(b"ID3"):
+        return True
+    if len(contents) >= 2 and contents[0] == 0xFF and (contents[1] & 0xE0) == 0xE0:
+        return True
+    return False
 
 # ============== PYDANTIC MODELS ==============
 
@@ -242,6 +253,32 @@ def backup_doc(doc):
 def serialize_docs(docs):
     """Convert list of MongoDB documents"""
     return [serialize_doc(doc) for doc in docs]
+
+def serialize_music_track(track):
+    """Return music metadata without exposing storage internals."""
+    track_id = str(track["_id"])
+    return {
+        "id": track_id,
+        "name": track.get("name") or track.get("filename") or "Untitled track",
+        "filename": track.get("filename", ""),
+        "contentType": track.get("contentType", "audio/mpeg"),
+        "size": track.get("size", 0),
+        "createdAt": track.get("createdAt"),
+        "updatedAt": track.get("updatedAt"),
+        "streamUrl": f"/api/music/{track_id}/stream"
+    }
+
+async def get_music_settings_doc():
+    settings = await settings_collection.find_one({"type": "music"})
+    if not settings:
+        settings = {
+            "type": "music",
+            "enabled": False,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
+        }
+        await settings_collection.insert_one(settings)
+    return settings
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -787,6 +824,7 @@ async def startup_event():
     await transfers_collection.create_index("employeeId")
     await employees_collection.create_index("name")
     await asset_types_collection.create_index("name", unique=True)
+    await music_tracks_collection.create_index("createdAt")
     
     # Create default super admin if not exists
     admin = await users_collection.find_one({"email": "admin@local.internal"})
@@ -843,6 +881,16 @@ async def startup_event():
             "dashboardPreviewMax": 5,
             "accentColor": "#4F46E5",
             "wallpaperFileId": None,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
+        })
+
+    # Create default music player settings
+    music_settings = await settings_collection.find_one({"type": "music"})
+    if not music_settings:
+        await settings_collection.insert_one({
+            "type": "music",
+            "enabled": False,
             "createdAt": datetime.now(timezone.utc),
             "updatedAt": datetime.now(timezone.utc)
         })
@@ -2021,6 +2069,192 @@ async def get_file(file_id: str):
         )
     except Exception:
         raise HTTPException(status_code=404, detail="File not found")
+
+# ============== APP MUSIC ENDPOINTS ==============
+
+@app.get("/api/music/config")
+async def get_public_music_config():
+    """Public music player config for login and authenticated app screens."""
+    settings = await get_music_settings_doc()
+    enabled = bool(settings.get("enabled", False))
+    tracks = []
+
+    if enabled:
+        docs = await music_tracks_collection.find({}).sort("createdAt", 1).to_list(500)
+        tracks = [serialize_music_track(doc) for doc in docs]
+
+    return {
+        "enabled": enabled,
+        "tracks": tracks,
+        "maxFileSize": MUSIC_MAX_FILE_SIZE
+    }
+
+@app.get("/api/music/{track_id}/stream")
+async def stream_music_track(track_id: str):
+    """Stream an enabled music track without auth so it works on the login page."""
+    settings = await get_music_settings_doc()
+    if not settings.get("enabled", False):
+        raise HTTPException(status_code=404, detail="Music player is disabled")
+
+    try:
+        object_id = ObjectId(track_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    track = await music_tracks_collection.find_one({"_id": object_id})
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    try:
+        grid_out = await fs.open_download_stream(track["gridfsFileId"])
+    except Exception:
+        raise HTTPException(status_code=404, detail="Track file not found")
+
+    async def file_iterator():
+        while True:
+            chunk = await grid_out.readchunk()
+            if not chunk:
+                break
+            yield chunk
+
+    filename = (track.get("filename") or "assetflow-music.mp3").replace('"', "")
+    return StreamingResponse(
+        file_iterator(),
+        media_type=track.get("contentType", "audio/mpeg"),
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=3600",
+            "Content-Length": str(track.get("size", 0))
+        }
+    )
+
+@app.get("/api/settings/music")
+async def get_music_settings(user: dict = Depends(get_current_user)):
+    require_super_admin(user)
+    settings = await get_music_settings_doc()
+    docs = await music_tracks_collection.find({}).sort("createdAt", 1).to_list(500)
+    return {
+        "enabled": bool(settings.get("enabled", False)),
+        "tracks": [serialize_music_track(doc) for doc in docs],
+        "maxFileSize": MUSIC_MAX_FILE_SIZE
+    }
+
+@app.put("/api/settings/music")
+async def update_music_settings(data: dict, user: dict = Depends(get_current_user)):
+    require_super_admin(user)
+    enabled = bool(data.get("enabled", False))
+    await settings_collection.update_one(
+        {"type": "music"},
+        {
+            "$set": {
+                "enabled": enabled,
+                "updatedAt": datetime.now(timezone.utc)
+            },
+            "$setOnInsert": {
+                "createdAt": datetime.now(timezone.utc)
+            }
+        },
+        upsert=True
+    )
+    return {"enabled": enabled}
+
+@app.post("/api/settings/music/tracks")
+async def upload_music_track(
+    name: str = Form(...),
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    require_super_admin(user)
+
+    clean_name = name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Music name is required")
+
+    filename = file.filename or "music.mp3"
+    content_type = file.content_type or "audio/mpeg"
+    contents = await file.read()
+    size = len(contents)
+    is_mp3 = filename.lower().endswith(".mp3") and (
+        content_type in MUSIC_CONTENT_TYPES or looks_like_mp3(contents)
+    )
+    if not is_mp3:
+        raise HTTPException(status_code=400, detail="Only MP3 files are allowed")
+    if content_type not in MUSIC_CONTENT_TYPES:
+        content_type = "audio/mpeg"
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Music file is empty")
+    if size > MUSIC_MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Music file must be 50 MB or smaller")
+
+    now = datetime.now(timezone.utc)
+    gridfs_file_id = await fs.upload_from_stream(
+        filename,
+        contents,
+        metadata={
+            "type": "app_music",
+            "name": clean_name,
+            "uploadedBy": user["id"],
+            "contentType": content_type,
+            "createdAt": now
+        }
+    )
+
+    track_doc = {
+        "name": clean_name,
+        "filename": filename,
+        "contentType": content_type,
+        "size": size,
+        "gridfsFileId": gridfs_file_id,
+        "uploadedBy": user["id"],
+        "createdAt": now,
+        "updatedAt": now
+    }
+    result = await music_tracks_collection.insert_one(track_doc)
+    track_doc["_id"] = result.inserted_id
+
+    return serialize_music_track(track_doc)
+
+@app.put("/api/settings/music/tracks/{track_id}")
+async def rename_music_track(track_id: str, data: dict, user: dict = Depends(get_current_user)):
+    require_super_admin(user)
+    new_name = str(data.get("name", "")).strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Music name is required")
+
+    try:
+        object_id = ObjectId(track_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    result = await music_tracks_collection.update_one(
+        {"_id": object_id},
+        {"$set": {"name": new_name, "updatedAt": datetime.now(timezone.utc)}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    track = await music_tracks_collection.find_one({"_id": object_id})
+    return serialize_music_track(track)
+
+@app.delete("/api/settings/music/tracks/{track_id}")
+async def delete_music_track(track_id: str, user: dict = Depends(get_current_user)):
+    require_super_admin(user)
+    try:
+        object_id = ObjectId(track_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    track = await music_tracks_collection.find_one({"_id": object_id})
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    await music_tracks_collection.delete_one({"_id": object_id})
+    try:
+        await fs.delete(track["gridfsFileId"])
+    except Exception:
+        pass
+
+    return {"success": True}
 
 # ============== TRANSFERS ENDPOINTS ==============
 

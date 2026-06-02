@@ -19,7 +19,8 @@ import {
   Server,
   Trash2,
   Clock,
-  ArchiveRestore
+  ArchiveRestore,
+  Music
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Button } from '../components/ui/button';
@@ -36,6 +37,7 @@ import { DatabaseStatusSettings } from '../components/settings/DatabaseStatusSet
 import { ClearDataSettings } from '../components/settings/ClearDataSettings';
 import { DateTimeSettings } from '../components/settings/DateTimeSettings';
 import { BackupRestoreSettings } from '../components/settings/BackupRestoreSettings';
+import { AppMusicSettings } from '../components/settings/AppMusicSettings';
 import { cn } from '../lib/utils';
 
 // Settings tree structure
@@ -54,6 +56,12 @@ const settingsTree = [
     id: 'personalization',
     label: 'Personalization',
     icon: Palette,
+    children: null
+  },
+  {
+    id: 'app-music',
+    label: 'App Music',
+    icon: Music,
     children: null
   },
   {
@@ -234,6 +242,8 @@ export default function SettingsPage() {
         return <DashboardSettings />;
       case 'personalization':
         return <PersonalizationSettings />;
+      case 'app-music':
+        return <AppMusicSettings />;
       case 'branding':
         return <BrandingSettings />;
       case 'smtp':

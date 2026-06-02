@@ -6,6 +6,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { BrandingProvider } from './context/BrandingContext';
 import { MainLayout } from './components/layout/MainLayout';
 import { LoadingPage } from './components/common/LoadingSpinner';
+import { GlobalMusicPlayer } from './components/music/GlobalMusicPlayer';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -123,6 +124,7 @@ function App() {
         <BrandingProvider>
           <AuthProvider>
             <AppRoutes />
+            <GlobalMusicPlayer />
             <Toaster position="top-right" richColors />
           </AuthProvider>
         </BrandingProvider>

@@ -133,12 +133,25 @@ export const filesAPI = {
   getUrl: (fileId) => `${API_BASE_URL}/api/files/${fileId}`,
 };
 
+// Music APIs
+export const musicAPI = {
+  getConfig: () => api.get('/api/music/config'),
+  getStreamUrl: (trackId) => `${API_BASE_URL}/api/music/${trackId}/stream`,
+};
+
 // Settings APIs
 export const settingsAPI = {
   getBranding: () => api.get('/api/settings/branding'),
   updateBranding: (data) => api.put('/api/settings/branding', data),
   getAppSettings: () => api.get('/api/settings/app'),
   updateAppSettings: (data) => api.put('/api/settings/app', data),
+  getMusic: () => api.get('/api/settings/music'),
+  updateMusic: (data) => api.put('/api/settings/music', data),
+  uploadMusicTrack: (formData) => api.post('/api/settings/music/tracks', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  renameMusicTrack: (id, data) => api.put(`/api/settings/music/tracks/${id}`, data),
+  deleteMusicTrack: (id) => api.delete(`/api/settings/music/tracks/${id}`),
   getEmployeeFields: () => api.get('/api/settings/employee-fields'),
   updateEmployeeFields: (data) => api.put('/api/settings/employee-fields', data),
   getSMTP: () => api.get('/api/settings/smtp'),
