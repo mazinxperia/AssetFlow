@@ -19,7 +19,6 @@ import { LoadingPage } from '../components/common/LoadingSpinner';
 import { ExportDropdown } from '../components/common/ExportDropdown';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -40,7 +39,6 @@ import {
 import { employeesAPI } from '../services/api';
 import { cachedAPI, invalidateCache } from '../services/apiCache';
 import { useAuth } from '../context/AuthContext';
-import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
 const SORT_FIELDS = [

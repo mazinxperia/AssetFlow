@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, GripVertical, Settings, Lock } from 'lucide-react';
+import { Plus, Edit, Trash2, GripVertical, Settings } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import {
   Dialog,

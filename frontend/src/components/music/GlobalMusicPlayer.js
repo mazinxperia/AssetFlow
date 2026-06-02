@@ -5,6 +5,7 @@ import { musicAPI } from '../../services/api';
 import { cn } from '../../lib/utils';
 
 const LEGACY_PAUSED_KEY = 'assetflow-music-paused';
+const PLAY_STATE_KEY = 'assetflow-music-play-state';
 const REFRESH_INTERVAL_MS = 60000;
 const WAVE_PURPLE = [139, 92, 246];
 const WAVE_PINK = [236, 72, 153];
@@ -119,7 +120,10 @@ export function GlobalMusicPlayer() {
   const [tracks, setTracks] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const [wantsPlaying, setWantsPlaying] = useState(true);
+  const [wantsPlaying, setWantsPlaying] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem(PLAY_STATE_KEY) !== 'paused';
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
@@ -168,11 +172,13 @@ export function GlobalMusicPlayer() {
   }, []);
 
   const playUserRequested = useCallback(() => {
+    localStorage.setItem(PLAY_STATE_KEY, 'playing');
     setWantsPlaying(true);
     attemptPlay();
   }, [attemptPlay]);
 
   const pauseUserRequested = useCallback(() => {
+    localStorage.setItem(PLAY_STATE_KEY, 'paused');
     setWantsPlaying(false);
     setAutoplayBlocked(false);
     pauseAudio();
@@ -181,6 +187,7 @@ export function GlobalMusicPlayer() {
   const selectNextTrack = useCallback(() => {
     const nextTrack = getRandomTrack(tracks, currentTrack?.id);
     if (!nextTrack) return;
+    localStorage.setItem(PLAY_STATE_KEY, 'playing');
     setWantsPlaying(true);
     setCurrentTrack(nextTrack);
   }, [currentTrack, tracks]);
@@ -270,7 +277,6 @@ export function GlobalMusicPlayer() {
       <audio
         ref={audioRef}
         src={streamUrl}
-        autoPlay
         preload="auto"
         onCanPlay={() => {
           if (wantsPlaying && !isPlaying) attemptPlay();
@@ -296,15 +302,18 @@ export function GlobalMusicPlayer() {
           className="pointer-events-none absolute right-[-83px] top-1/2 z-0 h-24 -translate-y-1/2 overflow-hidden"
           animate={{
             width: expanded ? 360 : 230,
-            opacity: isPlaying || autoplayBlocked ? 1 : 0.86
+            opacity: isPlaying ? 1 : 0
           }}
-          transition={{ type: 'spring', bounce: 0.1, duration: expanded ? 0.34 : 0.16 }}
+          transition={{
+            width: { type: 'spring', bounce: 0.1, duration: expanded ? 0.34 : 0.16 },
+            opacity: { duration: 0.42, ease: 'easeInOut' }
+          }}
           style={{
             WebkitMaskImage: 'linear-gradient(90deg, transparent 0%, black 14%, black 88%, transparent 100%)',
             maskImage: 'linear-gradient(90deg, transparent 0%, black 14%, black 88%, transparent 100%)'
           }}
         >
-          <WaveCanvas active={isPlaying || wantsPlaying} expanded={expanded} />
+          <WaveCanvas active={isPlaying} expanded={expanded} />
         </motion.div>
         <motion.div
           className={cn(
@@ -320,10 +329,14 @@ export function GlobalMusicPlayer() {
             borderRadius: 9999
           }}
         >
-          <div className="pointer-events-none absolute inset-0 z-0 opacity-85">
-            <WaveCanvas active={isPlaying || wantsPlaying} expanded={expanded} />
+          <motion.div
+            className="pointer-events-none absolute inset-0 z-0"
+            animate={{ opacity: isPlaying ? 0.85 : 0 }}
+            transition={{ duration: 0.34, ease: 'easeInOut' }}
+          >
+            <WaveCanvas active={isPlaying} expanded={expanded} />
             <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#050414]/70 via-transparent to-[#14092e]/40" />
-          </div>
+          </motion.div>
 
           <AnimatePresence initial={false}>
             {expanded && (
@@ -333,7 +346,7 @@ export function GlobalMusicPlayer() {
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: 12, filter: 'blur(5px)' }}
                 transition={{ duration: 0.18 }}
-                className="relative z-10 flex min-w-0 flex-1 items-center gap-3 pl-5 pr-2"
+                className="relative z-10 flex min-w-0 flex-1 items-center gap-3 pl-5 pr-20"
               >
                 <div className="flex h-9 w-16 items-center justify-center gap-1 rounded-full bg-violet-400/15">
                   {[0, 1, 2, 3].map(index => (
@@ -373,23 +386,27 @@ export function GlobalMusicPlayer() {
             type="button"
             onClick={handlePlayPause}
             className={cn(
-              "relative z-20 ml-auto flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full transition-all",
+              "absolute right-0 top-0 z-20 flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full transition-colors",
               "bg-violet-400/15 text-violet-100 hover:bg-violet-500 hover:text-white",
               !expanded && "bg-violet-600 text-white shadow-[0_0_28px_rgba(139,92,246,0.58)]"
             )}
             aria-label={isPlaying ? 'Pause app music' : 'Play app music'}
             title={isPlaying ? 'Pause app music' : 'Play app music'}
           >
-            <motion.span
-              key={isPlaying ? 'pause' : 'play'}
-              initial={{ opacity: 0, scale: 0.55, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, scale: 0.55, filter: 'blur(4px)' }}
-              transition={{ duration: 0.18 }}
-              className="flex items-center justify-center"
-            >
-              {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
-            </motion.span>
+            <span className="relative flex h-5 w-5 items-center justify-center">
+              <Pause
+                className={cn(
+                  "absolute h-5 w-5 fill-current transition-all duration-100",
+                  isPlaying ? "scale-100 opacity-100" : "scale-90 opacity-0"
+                )}
+              />
+              <Play
+                className={cn(
+                  "absolute h-5 w-5 fill-current transition-all duration-100",
+                  isPlaying ? "scale-90 opacity-0" : "scale-100 opacity-100"
+                )}
+              />
+            </span>
           </button>
         </motion.div>
       </motion.div>

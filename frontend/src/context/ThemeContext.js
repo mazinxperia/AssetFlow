@@ -55,11 +55,18 @@ export function ThemeProvider({ children }) {
           setAccentColor(response.data.accentColor);
           localStorage.setItem('assetflow-accent-color', response.data.accentColor);
         }
+        if (typeof response.data.glassMode === 'boolean') {
+          setGlassMode(response.data.glassMode);
+          localStorage.setItem('assetflow-glass-mode', String(response.data.glassMode));
+        }
         // Load wallpaper from database
         if (response.data.wallpaperFileId) {
           const url = filesAPI.getUrl(response.data.wallpaperFileId);
           setWallpaperUrl(url);
           localStorage.setItem('assetflow-wallpaper-url', url);
+        } else {
+          setWallpaperUrl('');
+          localStorage.removeItem('assetflow-wallpaper-url');
         }
       }
     } catch (error) {

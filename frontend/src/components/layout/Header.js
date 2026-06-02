@@ -5,7 +5,6 @@ import { Search, Sun, Moon, User, ChevronDown, Settings, LogOut } from 'lucide-r
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useBranding } from '../../context/BrandingContext';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import {
@@ -23,12 +22,10 @@ export function Header({ sidebarCollapsed }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [showResults, setShowResults] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const searchRef = useRef(null);
   const navigate = useNavigate();
   const { user, logout, isSuperAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { branding } = useBranding();
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -43,15 +40,12 @@ export function Header({ sidebarCollapsed }) {
   useEffect(() => {
     const debounce = setTimeout(async () => {
       if (searchQuery.trim().length >= 2) {
-        setIsSearching(true);
         try {
           const response = await searchAPI.search(searchQuery);
           setSearchResults(response.data);
           setShowResults(true);
         } catch (error) {
           console.error('Search failed:', error);
-        } finally {
-          setIsSearching(false);
         }
       } else {
         setSearchResults(null);

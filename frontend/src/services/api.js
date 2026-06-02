@@ -122,7 +122,6 @@ export const transfersAPI = {
   getByAssetId: (assetId) => api.get(`/api/transfers/asset/${assetId}`),
   getByEmployeeId: (employeeId) => api.get(`/api/transfers/employee/${employeeId}`),
   delete: (id) => api.delete(`/api/transfers/${id}`),
-  delete: (id) => api.delete(`/api/transfers/${id}`),
 };
 
 // Files APIs
@@ -139,6 +138,20 @@ export const musicAPI = {
   getStreamUrl: (trackId) => `${API_BASE_URL}/api/music/${trackId}/stream`,
 };
 
+// Vehicle Fleet APIs
+export const vehiclesAPI = {
+  getAll: () => api.get('/api/vehicles'),
+  getById: (id) => api.get(`/api/vehicles/${id}`),
+  create: (data) => api.post('/api/vehicles', data),
+  update: (id, data) => api.put(`/api/vehicles/${id}`, data),
+  delete: (id) => api.delete(`/api/vehicles/${id}`),
+  getFields: () => api.get('/api/vehicle-fields'),
+  uploadFile: (formData) => api.post('/api/vehicles/files', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  getFileUrl: (fileId) => `${API_BASE_URL}/api/vehicles/files/${fileId}`,
+};
+
 // Settings APIs
 export const settingsAPI = {
   getBranding: () => api.get('/api/settings/branding'),
@@ -152,6 +165,8 @@ export const settingsAPI = {
   }),
   renameMusicTrack: (id, data) => api.put(`/api/settings/music/tracks/${id}`, data),
   deleteMusicTrack: (id) => api.delete(`/api/settings/music/tracks/${id}`),
+  getVehicleFields: () => api.get('/api/settings/vehicle-fields'),
+  updateVehicleFields: (fields) => api.put('/api/settings/vehicle-fields', fields),
   getEmployeeFields: () => api.get('/api/settings/employee-fields'),
   updateEmployeeFields: (data) => api.put('/api/settings/employee-fields', data),
   getSMTP: () => api.get('/api/settings/smtp'),

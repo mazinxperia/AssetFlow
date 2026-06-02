@@ -6,6 +6,7 @@ import {
   Package, 
   Users, 
   Boxes, 
+  CarFront,
   ArrowLeftRight,
   Wallet, 
   // CreditCard used for subscriptions - see below
@@ -36,6 +37,11 @@ const adminNavItems = [
 // Subscriptions - visible to ADMIN and SUPER_ADMIN
 const subscriptionNavItems = [
   { path: '/subscriptions', label: 'Subscriptions', icon: Wallet },
+];
+
+// Vehicle Fleet is visible to everyone, but kept as its own section
+const vehicleNavItems = [
+  { path: '/vehicles', label: 'Vehicle Fleet', icon: CarFront },
 ];
 
 // Settings only for SUPER_ADMIN
@@ -139,6 +145,16 @@ export function Sidebar({ onCollapse }) {
               ))}
             </>
           )}
+
+          <div className="my-2 mx-1 border-t border-border/60" />
+          {vehicleNavItems.map((item) => (
+            <NavItem
+              key={item.path}
+              item={item}
+              collapsed={collapsed}
+              isActive={location.pathname.startsWith(item.path)}
+            />
+          ))}
         </nav>
 
         {/* Footer */}

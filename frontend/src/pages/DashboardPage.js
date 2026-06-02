@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Users, Package, Boxes, ArrowLeftRight,
   TrendingUp, Activity, ChevronRight, ChevronUp,
-  CreditCard, HardDrive, AlertTriangle, ExternalLink,
-  Globe, Lock, ShieldAlert, Calendar, ChevronLeft
+  CreditCard, HardDrive, AlertTriangle,
+  Globe, Lock, ShieldAlert, ChevronLeft
 } from 'lucide-react';
 import { dashboardAPI, transfersAPI, employeesAPI, subscriptionsAPI, clearAPI, settingsAPI } from '../services/api';
 import { cachedAPI } from '../services/apiCache';
@@ -368,12 +368,6 @@ function formatCurrency(amount, currency) {
 }
 
 function isExpired(d) { return d && new Date(d) < new Date(); }
-function isExpiringSoon(d) {
-  if (!d) return false;
-  const diff = (new Date(d) - new Date()) / (1000 * 60 * 60 * 24);
-  return diff >= 0 && diff <= 30;
-}
-
 function SubscriptionsWidget({ subs, navigate, displayCurrency = 'USD', exchangeRate = 1, showCosts = true, expiryWarningDays = 30 }) {
   const [hovered, setHovered] = useState(null);
 
@@ -886,11 +880,7 @@ export default function DashboardPage() {
   const [showDbStorage, setShowDbStorage] = useState(true);
   const [expiryWarningDays, setExpiryWarningDays] = useState(30);
   const [refreshInterval, setRefreshInterval] = useState(0);
-  const [dashboardEmployeeSort, setDashboardEmployeeSort] = useState('assets-desc');
-  const [topEmployeesCount, setTopEmployeesCount] = useState(5);
-  const [recentTransfersCount, setRecentTransfersCount] = useState(5);
   const [welcomeMessage, setWelcomeMessage] = useState('');
-  const [defaultAssetFilter, setDefaultAssetFilter] = useState('all');
 
   useEffect(() => {
     async function fetchAll() {
@@ -912,11 +902,7 @@ export default function DashboardPage() {
         setShowDbStorage(appSettings.showDbStorage !== false);
         setExpiryWarningDays(appSettings.expiryWarningDays || 30);
         setRefreshInterval(appSettings.refreshInterval || 0);
-        setDashboardEmployeeSort(appSettings.dashboardEmployeeSort || 'assets-desc');
-        setTopEmployeesCount(employeesLimit);
-        setRecentTransfersCount(transfersLimit);
         setWelcomeMessage(appSettings.welcomeMessage || '');
-        setDefaultAssetFilter(appSettings.defaultAssetFilter || 'all');
 
         // Show page immediately — don't wait for secondary data
         setLoading(false);

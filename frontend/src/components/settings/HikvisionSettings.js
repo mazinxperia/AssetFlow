@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle, XCircle, Loader2, RefreshCw, Circle, Users, ShieldCheck, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Circle, Users, ShieldCheck, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';

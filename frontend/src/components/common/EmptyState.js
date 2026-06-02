@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle, Info, XCircle } from 'lucide-react';
+import { CheckCircle, Info, XCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function EmptyState({ 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Palette, Moon, Sun, Image, Upload, X, Check, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -27,6 +27,7 @@ export function PersonalizationSettings() {
     theme, 
     toggleTheme, 
     glassMode, 
+    setGlassMode,
     toggleGlassMode, 
     accentColor, 
     setAccentColor,
@@ -40,11 +41,7 @@ export function PersonalizationSettings() {
   const [saving, setSaving] = useState(false);
   const [wallpaperFileId, setWallpaperFileId] = useState(null);
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const response = await settingsAPI.getAppSettings();
       if (response.data) {
@@ -53,10 +50,16 @@ export function PersonalizationSettings() {
           setAccentColor(response.data.accentColor);
           setCustomColor(response.data.accentColor);
         }
+        if (typeof response.data.glassMode === 'boolean') {
+          setGlassMode(response.data.glassMode);
+        }
         // Load wallpaper from server
         if (response.data.wallpaperFileId) {
           setWallpaperFileId(response.data.wallpaperFileId);
           setWallpaperUrl(filesAPI.getUrl(response.data.wallpaperFileId));
+        } else {
+          setWallpaperFileId(null);
+          setWallpaperUrl('');
         }
       }
     } catch (error) {
@@ -64,7 +67,11 @@ export function PersonalizationSettings() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setAccentColor, setGlassMode, setWallpaperUrl]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const handleColorSelect = (color) => {
     setAccentColor(color);
@@ -82,7 +89,8 @@ export function PersonalizationSettings() {
     try {
       await settingsAPI.updateAppSettings({ 
         accentColor,
-        wallpaperFileId 
+        wallpaperFileId,
+        glassMode
       });
       toast.success('Personalization settings saved');
     } catch (error) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
@@ -33,11 +33,7 @@ export default function EmployeeFormPage() {
     fieldValues: {}
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [id]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
       // Fetch custom fields configuration
       const fieldsRes = await settingsAPI.getEmployeeFields();
@@ -57,7 +53,11 @@ export default function EmployeeFormPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, isEditing]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleFieldValueChange = (fieldId, value) => {
     setForm(prev => ({

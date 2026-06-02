@@ -67,6 +67,7 @@
     "zod": "^3.24.4"
   },
   "scripts": {
+    "postinstall": "node scripts/patch-react-dev-utils.js",
     "start": "craco start",
     "build": "craco build",
     "test": "craco test"

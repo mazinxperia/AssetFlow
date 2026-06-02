@@ -3,7 +3,7 @@ import { Plus, Edit, Trash2, KeyRound, MoreHorizontal } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import {
   Table,
@@ -149,10 +149,6 @@ export function UserManagementSettings() {
   const closePasswordDialog = () => {
     setPasswordDialog({ open: false, user: null });
     setNewPassword('');
-  };
-
-  const getInitials = (name) => {
-    return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?';
   };
 
   const getRoleBadgeVariant = (role) => {

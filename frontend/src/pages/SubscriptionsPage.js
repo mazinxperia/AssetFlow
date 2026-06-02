@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -114,30 +114,18 @@ function EmployeeMultiSelect({ employees, selected, onChange }) {
 
 function SubscriptionFormDialog({ open, onClose, onSaved, initial, employees }) {
   const isEdit = !!initial;
-  const empty = {
+  const empty = useMemo(() => ({
     name: '', username: '', password: '', link: '', price: '',
     currency: 'USD', billingCycle: 'per year', assignedEmployeeIds: [],
     department: '', renewalDate: '', autopay: 'manual', paymentMethod: 'Credit Card', notes: '',
     logoFileId: null,
-  };
+  }), []);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [fetchingLogo, setFetchingLogo] = useState(false);
   const [logoPreview, setLogoPreview] = useState(null);
 
-  // Fetch logo when link changes (debounced) — only on ADD, not edit
-  useEffect(() => {
-    if (!form.link || isEdit) return;
-    const timer = setTimeout(() => {
-      if (form.link && !form.logoFileId && !logoPreview) {
-        fetchLogo(form.link);
-      }
-    }, 1200);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.link]);
-
-  const fetchLogo = async (url) => {
+  const fetchLogo = useCallback(async (url) => {
     if (!url) {
       toast.error('Please enter a URL first');
       return;
@@ -155,14 +143,25 @@ function SubscriptionFormDialog({ open, onClose, onSaved, initial, employees }) 
     } finally {
       setFetchingLogo(false);
     }
-  };
+  }, []);
+
+  // Fetch logo when link changes (debounced) — only on ADD, not edit
+  useEffect(() => {
+    if (!form.link || isEdit) return;
+    const timer = setTimeout(() => {
+      if (form.link && !form.logoFileId && !logoPreview) {
+        fetchLogo(form.link);
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [fetchLogo, form.link, form.logoFileId, isEdit, logoPreview]);
 
   useEffect(() => {
     if (open) {
       setForm(initial ? { ...empty, ...initial } : empty);
       setLogoPreview(initial?.logoFileId ? filesAPI.getUrl(initial.logoFileId) : null);
     }
-  }, [open, initial]);
+  }, [empty, open, initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 

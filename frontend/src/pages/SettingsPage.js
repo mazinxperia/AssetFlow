@@ -20,7 +20,8 @@ import {
   Trash2,
   Clock,
   ArchiveRestore,
-  Music
+  Music,
+  CarFront
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Button } from '../components/ui/button';
@@ -38,6 +39,7 @@ import { ClearDataSettings } from '../components/settings/ClearDataSettings';
 import { DateTimeSettings } from '../components/settings/DateTimeSettings';
 import { BackupRestoreSettings } from '../components/settings/BackupRestoreSettings';
 import { AppMusicSettings } from '../components/settings/AppMusicSettings';
+import { VehicleFieldsSettings } from '../components/settings/VehicleFieldsSettings';
 import { cn } from '../lib/utils';
 
 // Settings tree structure
@@ -49,6 +51,7 @@ const settingsTree = [
     children: [
       { id: 'asset-fields', label: 'Asset Fields', icon: Package },
       { id: 'employee-fields', label: 'Employee Fields', icon: Users },
+      { id: 'vehicle-fields', label: 'Vehicle Fields', icon: CarFront },
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ]
   },
@@ -238,6 +241,8 @@ export default function SettingsPage() {
         return <AssetTypesSettings />;
       case 'employee-fields':
         return <EmployeeFieldsSettings />;
+      case 'vehicle-fields':
+        return <VehicleFieldsSettings />;
       case 'dashboard':
         return <DashboardSettings />;
       case 'personalization':

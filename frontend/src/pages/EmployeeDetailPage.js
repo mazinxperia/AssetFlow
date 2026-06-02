@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -37,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog';
-import { employeesAPI, assetsAPI, assetTypesAPI } from '../services/api';
+import { employeesAPI, assetsAPI, assetTypesAPI, settingsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../lib/utils';
 import { toast } from 'sonner';
@@ -57,10 +57,6 @@ export default function EmployeeDetailPage() {
   const [assigning, setAssigning] = useState(false);
   const [assetTypes, setAssetTypes] = useState([]);
 
-  useEffect(() => {
-    fetchData();
-  }, [id]);
-
   const getModelNumber = (asset) => {
     if (!asset.fieldValues) return '';
     const at = assetTypes.find(t => t.id === asset.assetTypeId);
@@ -70,25 +66,31 @@ export default function EmployeeDetailPage() {
     return asset.fieldValues[mf.id] || '';
   };
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
-      const [employeeRes, assignedRes, inventoryRes, typesRes] = await Promise.all([
+      const [employeeRes, assignedRes, inventoryRes, typesRes, fieldsRes] = await Promise.all([
         employeesAPI.getById(id),
         employeesAPI.getAssignedAssets(id),
         assetsAPI.getInventory(),
-        assetTypesAPI.getAll()
+        assetTypesAPI.getAll(),
+        settingsAPI.getEmployeeFields()
       ]);
       setEmployee(employeeRes.data);
       setAssignedAssets(assignedRes.data);
       setAvailableAssets(inventoryRes.data);
       setAssetTypes(typesRes.data || []);
+      setCustomFields(fieldsRes.data || []);
     } catch (error) {
       toast.error('Failed to load employee details');
       navigate('/employees');
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDelete = async () => {
     try {

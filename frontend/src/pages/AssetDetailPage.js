@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -53,11 +53,7 @@ export default function AssetDetailPage() {
   const [notePopup, setNotePopup] = useState(null);
   const [deleteTransferId, setDeleteTransferId] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, [id, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
       const [assetRes, transfersRes] = await Promise.all([
         assetsAPI.getById(id),
@@ -71,7 +67,11 @@ export default function AssetDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDelete = async () => {
     try {

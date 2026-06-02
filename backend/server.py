@@ -84,12 +84,18 @@ reset_tokens_collection = db["reset_tokens"]
 files_collection = db["files"]
 subscriptions_collection = db["subscriptions"]
 music_tracks_collection = db["music_tracks"]
+vehicles_collection = db["vehicles"]
+vehicle_files_collection = db["vehicle_files"]
 
 # Scheduler for scheduled tasks
 scheduler = AsyncIOScheduler()
 
 MUSIC_MAX_FILE_SIZE = 50 * 1024 * 1024
 MUSIC_CONTENT_TYPES = {"audio/mpeg", "audio/mp3", "audio/x-mpeg", "audio/x-mp3"}
+VEHICLE_MAX_FILE_SIZE = 25 * 1024 * 1024
+VEHICLE_HERO_CONTENT_TYPES = {"image/png"}
+VEHICLE_ATTACHMENT_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+VEHICLE_FIELD_TYPES = {"text", "textarea", "number", "date", "select", "checkbox", "image"}
 
 def looks_like_mp3(contents: bytes) -> bool:
     if contents.startswith(b"ID3"):
@@ -155,6 +161,16 @@ class AssetUpdate(BaseModel):
     assetTypeId: Optional[str] = None
     assignedEmployeeId: Optional[str] = None
     imageUrl: Optional[str] = None
+    fieldValues: Optional[Dict[str, Any]] = None
+
+class VehicleCreate(BaseModel):
+    name: str
+    imageFileId: str
+    fieldValues: Optional[Dict[str, Any]] = None
+
+class VehicleUpdate(BaseModel):
+    name: Optional[str] = None
+    imageFileId: Optional[str] = None
     fieldValues: Optional[Dict[str, Any]] = None
 
 class TransferCreate(BaseModel):
@@ -267,6 +283,120 @@ def serialize_music_track(track):
         "updatedAt": track.get("updatedAt"),
         "streamUrl": f"/api/music/{track_id}/stream"
     }
+
+def serialize_vehicle_file(file_doc):
+    """Return vehicle file metadata with a browser-loadable URL."""
+    file_id = str(file_doc["_id"])
+    return {
+        "id": file_id,
+        "fileId": file_id,
+        "filename": file_doc.get("filename", ""),
+        "contentType": file_doc.get("contentType", "application/octet-stream"),
+        "size": file_doc.get("size", 0),
+        "kind": file_doc.get("kind", "field"),
+        "url": f"/api/vehicles/files/{file_id}",
+        "createdAt": file_doc.get("createdAt"),
+        "updatedAt": file_doc.get("updatedAt")
+    }
+
+def serialize_vehicle(vehicle):
+    """Return a vehicle document in frontend-friendly shape."""
+    vehicle_id = str(vehicle["_id"])
+    image_file_id = vehicle.get("imageFileId")
+    return {
+        "id": vehicle_id,
+        "name": vehicle.get("name", ""),
+        "imageFileId": image_file_id,
+        "imageUrl": f"/api/vehicles/files/{image_file_id}" if image_file_id else None,
+        "fieldValues": vehicle.get("fieldValues", {}),
+        "createdAt": vehicle.get("createdAt"),
+        "updatedAt": vehicle.get("updatedAt"),
+        "createdBy": vehicle.get("createdBy"),
+        "updatedBy": vehicle.get("updatedBy")
+    }
+
+async def get_vehicle_fields_doc():
+    settings = await settings_collection.find_one({"type": "vehicle_fields"})
+    if not settings:
+        settings = {
+            "type": "vehicle_fields",
+            "fields": [],
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
+        }
+        await settings_collection.insert_one(settings)
+    return settings
+
+def normalize_vehicle_fields(fields):
+    normalized = []
+    for raw_field in fields or []:
+        name = str(raw_field.get("name", "")).strip()
+        if not name:
+            continue
+        field_type = raw_field.get("fieldType", "text")
+        if field_type not in VEHICLE_FIELD_TYPES:
+            field_type = "text"
+        options = raw_field.get("options")
+        if field_type == "select":
+            options = [str(option).strip() for option in (options or []) if str(option).strip()]
+        else:
+            options = None
+        normalized.append({
+            "id": raw_field.get("id") or str(uuid.uuid4()),
+            "name": name,
+            "fieldType": field_type,
+            "required": bool(raw_field.get("required", False)),
+            "options": options,
+            "showInPreview": bool(raw_field.get("showInPreview", False)),
+            "showInDetail": raw_field.get("showInDetail", True) is not False,
+            "showInForm": raw_field.get("showInForm", True) is not False,
+            "createdAt": raw_field.get("createdAt") or datetime.now(timezone.utc).isoformat(),
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        })
+    return normalized
+
+async def validate_vehicle_payload(name: Optional[str], image_file_id: Optional[str], field_values: Optional[Dict[str, Any]], partial: bool = False):
+    clean_name = str(name or "").strip() if name is not None else None
+    if not partial and not clean_name:
+        raise HTTPException(status_code=400, detail="Vehicle name is required")
+    if clean_name is not None and not clean_name:
+        raise HTTPException(status_code=400, detail="Vehicle name is required")
+
+    if not partial and not image_file_id:
+        raise HTTPException(status_code=400, detail="Vehicle PNG image is required")
+    if image_file_id:
+        try:
+            file_doc = await vehicle_files_collection.find_one({"_id": ObjectId(image_file_id), "kind": "hero"})
+        except Exception:
+            file_doc = None
+        if not file_doc:
+            raise HTTPException(status_code=400, detail="Vehicle image must be an uploaded PNG vehicle file")
+
+    vehicle_fields = (await get_vehicle_fields_doc()).get("fields", [])
+    values = field_values or {}
+    for field in vehicle_fields:
+        field_id = field.get("id")
+        if not field_id:
+            continue
+        value = values.get(field_id)
+        if field.get("required") and (value is None or value == "" or value == []):
+            raise HTTPException(status_code=400, detail=f"{field.get('name')} is required")
+        if value in (None, ""):
+            continue
+        if field.get("fieldType") == "select":
+            options = field.get("options") or []
+            if options and value not in options:
+                raise HTTPException(status_code=400, detail=f"{field.get('name')} has an invalid option")
+        if field.get("fieldType") == "image":
+            file_id = value.get("fileId") if isinstance(value, dict) else value
+            try:
+                attachment = await vehicle_files_collection.find_one({"_id": ObjectId(file_id), "kind": "field"})
+            except Exception:
+                attachment = None
+            if not attachment:
+                raise HTTPException(status_code=400, detail=f"{field.get('name')} must be an uploaded vehicle document image")
+
+    return clean_name
 
 async def get_music_settings_doc():
     settings = await settings_collection.find_one({"type": "music"})
@@ -825,6 +955,10 @@ async def startup_event():
     await employees_collection.create_index("name")
     await asset_types_collection.create_index("name", unique=True)
     await music_tracks_collection.create_index("createdAt")
+    await vehicles_collection.create_index("name")
+    await vehicles_collection.create_index("createdAt")
+    await vehicle_files_collection.create_index("createdAt")
+    await vehicle_files_collection.create_index("kind")
     
     # Create default super admin if not exists
     admin = await users_collection.find_one({"email": "admin@local.internal"})
@@ -881,9 +1015,15 @@ async def startup_event():
             "dashboardPreviewMax": 5,
             "accentColor": "#4F46E5",
             "wallpaperFileId": None,
+            "glassMode": False,
             "createdAt": datetime.now(timezone.utc),
             "updatedAt": datetime.now(timezone.utc)
         })
+    elif "glassMode" not in app_settings:
+        await settings_collection.update_one(
+            {"type": "app"},
+            {"$set": {"glassMode": False, "updatedAt": datetime.now(timezone.utc)}}
+        )
 
     # Create default music player settings
     music_settings = await settings_collection.find_one({"type": "music"})
@@ -891,6 +1031,15 @@ async def startup_event():
         await settings_collection.insert_one({
             "type": "music",
             "enabled": False,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
+        })
+
+    vehicle_fields = await settings_collection.find_one({"type": "vehicle_fields"})
+    if not vehicle_fields:
+        await settings_collection.insert_one({
+            "type": "vehicle_fields",
+            "fields": [],
             "createdAt": datetime.now(timezone.utc),
             "updatedAt": datetime.now(timezone.utc)
         })
@@ -2020,6 +2169,210 @@ async def upload_image(image: UploadFile = File(...), user: dict = Depends(get_c
     data_url = f"data:{content_type};base64,{base64_data}"
     
     return {"url": data_url}
+
+# ============== VEHICLE FLEET ENDPOINTS ==============
+
+@app.get("/api/vehicle-fields")
+async def get_public_vehicle_fields(user: dict = Depends(get_current_user)):
+    settings = await get_vehicle_fields_doc()
+    return settings.get("fields", [])
+
+@app.get("/api/settings/vehicle-fields")
+async def get_vehicle_fields_settings(user: dict = Depends(get_current_user)):
+    settings = await get_vehicle_fields_doc()
+    return settings.get("fields", [])
+
+@app.put("/api/settings/vehicle-fields")
+async def update_vehicle_fields_settings(fields: List[dict], user: dict = Depends(get_current_user)):
+    require_super_admin(user)
+    normalized = normalize_vehicle_fields(fields)
+    if sum(1 for field in normalized if field.get("showInPreview")) > 4:
+        raise HTTPException(status_code=400, detail="Only 4 vehicle fields can be shown in the selector preview")
+
+    await settings_collection.update_one(
+        {"type": "vehicle_fields"},
+        {
+            "$set": {
+                "fields": normalized,
+                "updatedAt": datetime.now(timezone.utc)
+            },
+            "$setOnInsert": {
+                "createdAt": datetime.now(timezone.utc)
+            }
+        },
+        upsert=True
+    )
+    return normalized
+
+@app.post("/api/vehicles/files")
+async def upload_vehicle_file(
+    kind: str = Form("field"),
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user)
+):
+    require_admin(user)
+
+    normalized_kind = "hero" if kind == "hero" else "field"
+    filename = file.filename or "vehicle-file"
+    content_type = (file.content_type or "").lower()
+    extension = os.path.splitext(filename.lower())[1]
+    contents = await file.read()
+    size = len(contents)
+
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if size > VEHICLE_MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Vehicle files must be 25 MB or smaller")
+
+    if normalized_kind == "hero":
+        if content_type not in VEHICLE_HERO_CONTENT_TYPES or extension != ".png":
+            raise HTTPException(status_code=400, detail="Vehicle image must be a PNG file")
+        clean_content_type = "image/png"
+    else:
+        extension_allowed = extension in {".png", ".jpg", ".jpeg", ".webp"}
+        content_allowed = content_type in VEHICLE_ATTACHMENT_CONTENT_TYPES
+        if not extension_allowed or not content_allowed:
+            raise HTTPException(status_code=400, detail="Vehicle document images must be PNG, JPG, JPEG, or WebP")
+        clean_content_type = "image/jpeg" if content_type == "image/jpg" else content_type
+
+    now = datetime.now(timezone.utc)
+    gridfs_file_id = await fs.upload_from_stream(
+        filename,
+        contents,
+        metadata={
+            "type": "vehicle_file",
+            "kind": normalized_kind,
+            "uploadedBy": user["id"],
+            "contentType": clean_content_type,
+            "createdAt": now
+        }
+    )
+
+    file_doc = {
+        "filename": filename,
+        "contentType": clean_content_type,
+        "size": size,
+        "kind": normalized_kind,
+        "gridfsFileId": gridfs_file_id,
+        "uploadedBy": user["id"],
+        "createdAt": now,
+        "updatedAt": now
+    }
+    result = await vehicle_files_collection.insert_one(file_doc)
+    file_doc["_id"] = result.inserted_id
+    return serialize_vehicle_file(file_doc)
+
+@app.get("/api/vehicles/files/{file_id}")
+async def stream_vehicle_file(file_id: str):
+    try:
+        object_id = ObjectId(file_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Vehicle file not found")
+
+    file_doc = await vehicle_files_collection.find_one({"_id": object_id})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="Vehicle file not found")
+
+    try:
+        grid_out = await fs.open_download_stream(file_doc["gridfsFileId"])
+    except Exception:
+        raise HTTPException(status_code=404, detail="Vehicle file data not found")
+
+    async def file_iterator():
+        while True:
+            chunk = await grid_out.readchunk()
+            if not chunk:
+                break
+            yield chunk
+
+    filename = (file_doc.get("filename") or "vehicle-file").replace('"', "")
+    return StreamingResponse(
+        file_iterator(),
+        media_type=file_doc.get("contentType", "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "public, max-age=86400",
+            "Content-Length": str(file_doc.get("size", 0))
+        }
+    )
+
+@app.get("/api/vehicles")
+async def get_vehicles(user: dict = Depends(get_current_user)):
+    vehicles = await vehicles_collection.find({}).sort("createdAt", -1).to_list(1000)
+    return [serialize_vehicle(vehicle) for vehicle in vehicles]
+
+@app.get("/api/vehicles/{vehicle_id}")
+async def get_vehicle(vehicle_id: str, user: dict = Depends(get_current_user)):
+    try:
+        object_id = ObjectId(vehicle_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    vehicle = await vehicles_collection.find_one({"_id": object_id})
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    return serialize_vehicle(vehicle)
+
+@app.post("/api/vehicles")
+async def create_vehicle(data: VehicleCreate, user: dict = Depends(get_current_user)):
+    require_admin(user)
+    clean_name = await validate_vehicle_payload(data.name, data.imageFileId, data.fieldValues)
+    now = datetime.now(timezone.utc)
+    vehicle_doc = {
+        "name": clean_name,
+        "imageFileId": data.imageFileId,
+        "fieldValues": data.fieldValues or {},
+        "createdBy": user["id"],
+        "updatedBy": user["id"],
+        "createdAt": now,
+        "updatedAt": now
+    }
+    result = await vehicles_collection.insert_one(vehicle_doc)
+    vehicle_doc["_id"] = result.inserted_id
+    return serialize_vehicle(vehicle_doc)
+
+@app.put("/api/vehicles/{vehicle_id}")
+async def update_vehicle(vehicle_id: str, data: VehicleUpdate, user: dict = Depends(get_current_user)):
+    require_admin(user)
+    try:
+        object_id = ObjectId(vehicle_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    existing = await vehicles_collection.find_one({"_id": object_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    clean_name = await validate_vehicle_payload(
+        data.name if data.name is not None else existing.get("name"),
+        data.imageFileId if data.imageFileId is not None else existing.get("imageFileId"),
+        data.fieldValues if data.fieldValues is not None else existing.get("fieldValues", {}),
+        partial=True
+    )
+
+    update_data = {"updatedAt": datetime.now(timezone.utc), "updatedBy": user["id"]}
+    if clean_name is not None:
+        update_data["name"] = clean_name
+    if data.imageFileId is not None:
+        update_data["imageFileId"] = data.imageFileId
+    if data.fieldValues is not None:
+        update_data["fieldValues"] = data.fieldValues
+
+    await vehicles_collection.update_one({"_id": object_id}, {"$set": update_data})
+    updated = await vehicles_collection.find_one({"_id": object_id})
+    return serialize_vehicle(updated)
+
+@app.delete("/api/vehicles/{vehicle_id}")
+async def delete_vehicle(vehicle_id: str, user: dict = Depends(get_current_user)):
+    require_admin(user)
+    try:
+        object_id = ObjectId(vehicle_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    result = await vehicles_collection.delete_one({"_id": object_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    return {"message": "Vehicle deleted"}
 
 # ============== FILE UPLOAD ENDPOINTS ==============
 

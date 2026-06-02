@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, DollarSign, Eye, RefreshCw, Clock, Calendar, Users, ArrowLeftRight, MessageSquare, Filter, ArrowUpDown } from 'lucide-react';
+import { Loader2, DollarSign, Eye, RefreshCw, Clock, Calendar, Users, MessageSquare, Filter, ArrowUpDown } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';

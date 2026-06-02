@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { 
   ArrowLeft, 
   Camera, 
@@ -60,16 +59,7 @@ export default function AssetFormPage() {
     fieldValues: {}
   });
 
-  useEffect(() => {
-    fetchData();
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [id]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
       const [typesRes, employeesRes] = await Promise.all([
         assetTypesAPI.getAll(),
@@ -95,7 +85,16 @@ export default function AssetFormPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, isEditing]);
+
+  useEffect(() => {
+    fetchData();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [fetchData]);
 
   const handleTypeChange = (typeId) => {
     setForm(prev => ({ ...prev, assetTypeId: typeId, fieldValues: {} }));

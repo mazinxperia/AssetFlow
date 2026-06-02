@@ -3,8 +3,9 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files first for better Docker layer caching
+# Copy package files and install scripts first for better Docker layer caching
 COPY package.json package-lock.json .npmrc ./
+COPY scripts ./scripts
 RUN npm ci --legacy-peer-deps
 
 # Copy source code

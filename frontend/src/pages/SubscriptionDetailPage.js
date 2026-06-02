@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft, Edit, Trash2, CreditCard, Eye, EyeOff,
-  Globe, ExternalLink, Users, Calendar, RefreshCw,
-  DollarSign, Building2, FileText, AlertTriangle, CheckCircle2, Lock, Loader2
+  Globe, ExternalLink, Users, Calendar,
+  DollarSign, AlertTriangle, CheckCircle2, Lock, Loader2
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { LoadingPage } from '../components/common/LoadingSpinner';
@@ -299,10 +299,7 @@ export default function SubscriptionDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  useEffect(() => { fetchData(); }, [id]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
       const [subRes, empRes] = await Promise.all([
         subscriptionsAPI.getById(id),
@@ -316,7 +313,9 @@ export default function SubscriptionDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, navigate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleDelete = async () => {
     try {

@@ -20,6 +20,7 @@ import EmployeesPage from './pages/EmployeesPage';
 import EmployeeFormPage from './pages/EmployeeFormPage';
 import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import InventoryPage from './pages/InventoryPage';
+import VehicleFleetPage from './pages/VehicleFleetPage';
 import TransfersPage from './pages/TransfersPage';
 import SubscriptionsPage from './pages/SubscriptionsPage';
 import SubscriptionDetailPage from './pages/SubscriptionDetailPage';
@@ -94,6 +95,9 @@ function AppRoutes() {
         
         {/* Inventory */}
         <Route path="/inventory" element={<InventoryPage />} />
+
+        {/* Vehicle Fleet */}
+        <Route path="/vehicles" element={<VehicleFleetPage />} />
         
         {/* Transfers */}
         <Route path="/transfers" element={<TransfersPage />} />
