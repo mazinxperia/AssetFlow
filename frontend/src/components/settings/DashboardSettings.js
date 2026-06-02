@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, DollarSign, Eye, RefreshCw, Clock, Calendar, Users, MessageSquare, Filter, ArrowUpDown } from 'lucide-react';
+import { Loader2, DollarSign, Eye, RefreshCw, Clock, Calendar, MessageSquare, Filter, ListChecks } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
@@ -19,15 +19,6 @@ const CURRENCIES = [
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
   { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollar' },
   { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
-];
-
-const EMPLOYEE_SORT_OPTIONS = [
-  { value: 'employeeId-asc', label: 'Employee ID (Ascending)' },
-  { value: 'employeeId-desc', label: 'Employee ID (Descending)' },
-  { value: 'name-asc', label: 'Name (A → Z)' },
-  { value: 'name-desc', label: 'Name (Z → A)' },
-  { value: 'assets-asc', label: 'Assets Assigned (Low to High)' },
-  { value: 'assets-desc', label: 'Assets Assigned (High to Low)' },
 ];
 
 function ToggleRow({ label, desc, value, onChange }) {
@@ -67,11 +58,9 @@ export function DashboardSettings() {
   const [dateFormat, setDateFormat] = useState('MMM DD, YYYY');
   const [expiryWarningDays, setExpiryWarningDays] = useState('30');
   const [refreshInterval, setRefreshInterval] = useState('0');
-  const [topEmployeesCount, setTopEmployeesCount] = useState('5');
   const [recentTransfersCount, setRecentTransfersCount] = useState('5');
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [defaultAssetFilter, setDefaultAssetFilter] = useState('all');
-  const [dashboardEmployeeSort, setDashboardEmployeeSort] = useState('assets-desc');
 
   useEffect(() => { fetchSettings(); }, []);
   useEffect(() => {
@@ -89,11 +78,9 @@ export function DashboardSettings() {
       setDateFormat(d.dateFormat || 'MMM DD, YYYY');
       setExpiryWarningDays(String(d.expiryWarningDays || 30));
       setRefreshInterval(String(d.refreshInterval || 0));
-      setTopEmployeesCount(String(d.topEmployeesCount || 5));
       setRecentTransfersCount(String(d.recentTransfersCount || 5));
       setWelcomeMessage(d.welcomeMessage || '');
       setDefaultAssetFilter(d.defaultAssetFilter || 'all');
-      setDashboardEmployeeSort(d.dashboardEmployeeSort || 'assets-desc');
     } catch {}
     finally { setLoading(false); }
   };
@@ -119,11 +106,9 @@ export function DashboardSettings() {
         dateFormat,
         expiryWarningDays: parseInt(expiryWarningDays) || 30,
         refreshInterval: parseInt(refreshInterval) || 0,
-        topEmployeesCount: parseInt(topEmployeesCount) || 5,
         recentTransfersCount: parseInt(recentTransfersCount) || 5,
         welcomeMessage,
         defaultAssetFilter,
-        dashboardEmployeeSort,
       });
       toast.success('Dashboard settings saved');
     } catch { toast.error('Failed to save settings'); }
@@ -246,55 +231,24 @@ export function DashboardSettings() {
 
       {/* 5. List Counts */}
       <Card>
-        <SectionHeader icon={Users} title="List Counts"
-          description="How many items to show in dashboard lists" />
+        <SectionHeader icon={ListChecks} title="Dashboard Lists"
+          description="How many recent records to show in dashboard list widgets" />
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Top Employees to Show</Label>
-              <Select value={topEmployeesCount} onValueChange={setTopEmployeesCount}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="3">3 employees</SelectItem>
-                  <SelectItem value="5">5 employees</SelectItem>
-                  <SelectItem value="10">10 employees</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Recent Transfers to Show</Label>
-              <Select value={recentTransfersCount} onValueChange={setRecentTransfersCount}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="3">3 transfers</SelectItem>
-                  <SelectItem value="5">5 transfers</SelectItem>
-                  <SelectItem value="10">10 transfers</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label>Recent Transfers to Show</Label>
+            <Select value={recentTransfersCount} onValueChange={setRecentTransfersCount}>
+              <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3">3 transfers</SelectItem>
+                <SelectItem value="5">5 transfers</SelectItem>
+                <SelectItem value="10">10 transfers</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* 6. Employee Sort Order (NEW) */}
-      <Card>
-        <SectionHeader icon={ArrowUpDown} title="Dashboard Employee Sort"
-          description="How employees are sorted in the 'Employees by Assets' widget on the dashboard" />
-        <CardContent>
-          <Select value={dashboardEmployeeSort} onValueChange={setDashboardEmployeeSort}>
-            <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {EMPLOYEE_SORT_OPTIONS.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
-      {/* 7. Default Asset Filter */}
+      {/* 6. Default Asset Filter */}
       <Card>
         <SectionHeader icon={Filter} title="Default Asset Filter"
           description="Which filter is applied when you open the Assets page" />
@@ -310,7 +264,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 8. Welcome Message */}
+      {/* 7. Welcome Message */}
       <Card>
         <SectionHeader icon={MessageSquare} title="Welcome Message"
           description="Custom message shown under the Dashboard heading. Leave blank for default." />
@@ -324,7 +278,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 9. Widget Visibility */}
+      {/* 8. Widget Visibility */}
       <Card>
         <SectionHeader icon={Eye} title="Widget Visibility"
           description="Choose which widgets appear on the dashboard" />

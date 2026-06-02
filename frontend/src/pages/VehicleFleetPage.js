@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import {
   ArrowLeft,
   CarFront,
@@ -53,8 +53,8 @@ import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
 const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
-const SOFT_FADE = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
-const VEHICLE_SPRING = { type: 'spring', stiffness: 180, damping: 28, mass: 0.9 };
+const SOFT_FADE = { duration: 0.18, ease: [0.22, 1, 0.36, 1] };
+const VEHICLE_SPRING = { type: 'spring', stiffness: 280, damping: 34, mass: 0.72 };
 
 function resolveVehicleFileUrl(path) {
   if (!path) return '';
@@ -174,17 +174,27 @@ function FieldInput({ field, value, onChange, onUpload }) {
   );
 }
 
-function DockItem({ vehicle, active, onSelect, scale = 1 }) {
+function DockItem({ vehicle, active, onSelect, mouseX }) {
+  const itemRef = useRef(null);
+  const distance = useTransform(mouseX, (value) => {
+    const bounds = itemRef.current?.getBoundingClientRect();
+    if (!bounds) return 9999;
+    return value - bounds.x - bounds.width / 2;
+  });
+  const scaleTarget = useTransform(distance, [-170, 0, 170], [1, active ? 1.32 : 1.28, 1]);
+  const scale = useSpring(scaleTarget, { stiffness: 620, damping: 34, mass: 0.24 });
+  const yTarget = useTransform(scale, [1, 1.32], [0, -9]);
+  const y = useSpring(yTarget, { stiffness: 620, damping: 34, mass: 0.24 });
+
   return (
     <motion.button
+      ref={itemRef}
       type="button"
       onClick={() => onSelect(vehicle)}
       initial={false}
-      animate={{ scale: active ? Math.max(scale, 1.08) : scale, y: scale > 1.06 ? -6 * (scale - 1) : 0 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 24, mass: 0.45 }}
-      style={{ zIndex: Math.round(scale * 20) }}
+      style={{ scale, y, zIndex: active ? 30 : 10 }}
       className={cn(
-        "group relative flex h-[92px] w-[92px] shrink-0 origin-bottom items-center justify-center overflow-visible rounded-2xl p-2 transition-colors",
+        "group relative flex h-[92px] w-[92px] shrink-0 origin-bottom items-center justify-center overflow-visible rounded-2xl p-2 transition-colors will-change-transform",
         active ? "text-primary" : "text-foreground"
       )}
     >
@@ -197,50 +207,27 @@ function DockItem({ vehicle, active, onSelect, scale = 1 }) {
       <div className="pointer-events-none absolute inset-x-2 bottom-2 rounded-full bg-background/85 px-2 py-1 text-center text-[11px] font-medium shadow-sm backdrop-blur-md">
         <span className="block truncate">{vehicle.name}</span>
       </div>
-      {active && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary shadow-[0_0_12px_rgb(var(--primary))]" />}
+      {active && <span className="absolute bottom-0 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_12px_rgb(var(--primary))]" />}
     </motion.button>
   );
 }
 
 function VehicleDock({ vehicles, selectedVehicle, onSelect }) {
-  const dockRef = useRef(null);
-  const [mouseX, setMouseX] = useState(null);
-  const itemSize = 92;
-  const gap = 14;
-  const padding = 16;
-  const effectWidth = 320;
-  const maxScale = 1.32;
-
-  function getScale(index) {
-    if (mouseX === null) return 1;
-    const center = padding + index * (itemSize + gap) + itemSize / 2;
-    const minX = mouseX - effectWidth / 2;
-    const maxX = mouseX + effectWidth / 2;
-
-    if (center < minX || center > maxX) return 1;
-    const theta = ((center - minX) / effectWidth) * 2 * Math.PI;
-    const scaleFactor = (1 - Math.cos(theta)) / 2;
-    return 1 + scaleFactor * (maxScale - 1);
-  }
+  const mouseX = useMotionValue(9999);
 
   return (
     <div
-      ref={dockRef}
-      onMouseMove={(event) => {
-        const rect = dockRef.current?.getBoundingClientRect();
-        if (!rect || !dockRef.current) return;
-        setMouseX(event.clientX - rect.left + dockRef.current.scrollLeft);
-      }}
-      onMouseLeave={() => setMouseX(null)}
+      onMouseMove={(event) => mouseX.set(event.clientX)}
+      onMouseLeave={() => mouseX.set(9999)}
       className="mx-auto flex max-w-4xl items-end gap-[14px] overflow-x-auto overflow-y-visible px-4 py-5"
     >
-      {vehicles.map((vehicle, index) => (
+      {vehicles.map((vehicle) => (
         <DockItem
           key={vehicle.id}
           vehicle={vehicle}
           active={vehicle.id === selectedVehicle?.id}
           onSelect={onSelect}
-          scale={getScale(index)}
+          mouseX={mouseX}
         />
       ))}
     </div>
@@ -818,17 +805,11 @@ export default function VehicleFleetPage() {
                 key={selectedVehicle.id}
                 src={resolveVehicleFileUrl(selectedVehicle.imageUrl)}
                 alt={selectedVehicle.name}
-                initial={{ opacity: 0, scale: 0.985, filter: 'blur(12px) drop-shadow(0 24px 24px rgb(0 0 0 / 0.28))' }}
-                animate={{
-                  opacity: 1,
-                  scale: 1,
-                  filter: carMotionBlur
-                    ? 'blur(3px) drop-shadow(0 24px 24px rgb(0 0 0 / 0.28))'
-                    : 'blur(0px) drop-shadow(0 24px 24px rgb(0 0 0 / 0.28))'
-                }}
-                exit={{ opacity: 0, scale: 1.015, filter: 'blur(10px) drop-shadow(0 24px 24px rgb(0 0 0 / 0.28))' }}
-                transition={carMotionBlur ? { duration: 0.18, ease: 'easeOut' } : SOFT_FADE}
-                className="relative z-10 max-h-[430px] w-full object-contain"
+                initial={{ opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: carMotionBlur ? 1.012 : 1 }}
+                exit={{ opacity: 0, scale: 1.015 }}
+                transition={SOFT_FADE}
+                className="relative z-10 max-h-[430px] w-full transform-gpu object-contain drop-shadow-[0_24px_24px_rgb(0_0_0_/_0.28)] will-change-transform"
                 draggable={false}
               />
             </AnimatePresence>

@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Users, Package, Boxes, ArrowLeftRight,
+  Users, Package, Boxes, ArrowLeftRight, CarFront,
   TrendingUp, Activity, ChevronRight, ChevronUp,
   CreditCard, HardDrive, AlertTriangle,
   Globe, Lock, ShieldAlert, ChevronLeft
 } from 'lucide-react';
-import { dashboardAPI, transfersAPI, employeesAPI, subscriptionsAPI, clearAPI, settingsAPI } from '../services/api';
+import { dashboardAPI, transfersAPI, vehiclesAPI, subscriptionsAPI, clearAPI, settingsAPI } from '../services/api';
 import { cachedAPI } from '../services/apiCache';
 import { LoadingPage } from '../components/common/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -324,38 +324,117 @@ function TransferRow({ transfer, index }) {
   );
 }
 
-// ── Employee Row ─────────────────────────────────────────────────────────────
-function EmployeeRow({ emp, index, max }) {
-  const [hovered, setHovered] = useState(false);
-  const COLORS = ['#f43f5e','#3b82f6','#10b981','#f59e0b','#8b5cf6'];
-  const color = COLORS[index % COLORS.length];
-  const pct = max ? ((emp.assetCount || 0) / max) * 100 : 0;
-  const initials = emp.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '??';
+// ── Vehicle Fleet Widget ─────────────────────────────────────────────────────
+function getVehicleImageUrl(path) {
+  if (!path) return '';
+  return path.startsWith('http') ? path : vehiclesAPI.getFileUrl(path.split('/').pop());
+}
+
+function VehicleFleetWidget({ vehicles, navigate }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeVehicle = vehicles[activeIndex] || null;
+  const hasMultiple = vehicles.length > 1;
+
+  useEffect(() => {
+    setActiveIndex(index => (vehicles.length ? Math.min(index, vehicles.length - 1) : 0));
+  }, [vehicles.length]);
+
+  const goPrev = () => {
+    if (!vehicles.length) return;
+    setActiveIndex(index => (index - 1 + vehicles.length) % vehicles.length);
+  };
+
+  const goNext = () => {
+    if (!vehicles.length) return;
+    setActiveIndex(index => (index + 1) % vehicles.length);
+  };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.06 }}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className="flex items-center gap-3 py-2.5 rounded-xl px-2 transition-all duration-200"
-      style={{ background: hovered ? color + '10' : 'transparent' }}>
-      <motion.div animate={{ scale: hovered ? 1.1 : 1 }} transition={{ type: 'spring', stiffness: 300 }}
-        className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-        style={{ background: color, boxShadow: hovered ? `0 0 14px ${color}70` : 'none', transition: 'box-shadow 0.25s' }}>
-        {initials}
-      </motion.div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-sm font-medium truncate">{emp.name}</span>
-          <motion.span animate={{ color: hovered ? color : 'var(--foreground)' }} className="text-sm font-bold ml-2 tabular-nums">
-            {emp.assetCount || 0}
-          </motion.span>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+      className="rounded-2xl border bg-card p-6 overflow-hidden">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+            <CarFront className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-base">Vehicle Fleet</h2>
+            <p className="text-xs text-muted-foreground">{vehicles.length} total vehicles</p>
+          </div>
         </div>
-        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
-            transition={{ duration: 0.1 }}
-            className="h-full rounded-full"
-            style={{ background: color, boxShadow: hovered ? `0 0 6px ${color}` : 'none', transition: 'box-shadow 0.25s' }} />
-        </div>
+        <button onClick={() => navigate('/vehicles')}
+          className="text-xs text-primary hover:underline flex items-center gap-1 transition-opacity hover:opacity-80">
+          View all <ChevronRight className="w-3 h-3" />
+        </button>
       </div>
+
+      {activeVehicle ? (
+        <div className="relative min-h-[250px] rounded-2xl bg-muted/30 p-4">
+          <div className="absolute inset-x-6 bottom-16 h-12 rounded-full bg-primary/10 blur-2xl" />
+          <div className="relative flex min-h-[180px] items-center justify-center">
+            <button
+              type="button"
+              onClick={goPrev}
+              disabled={!hasMultiple}
+              className="absolute left-0 z-10 flex h-9 w-9 items-center justify-center rounded-full border bg-background/80 text-muted-foreground backdrop-blur transition hover:text-foreground disabled:cursor-default disabled:opacity-35"
+              aria-label="Previous vehicle"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.img
+                key={activeVehicle.id}
+                src={getVehicleImageUrl(activeVehicle.imageUrl)}
+                alt={activeVehicle.name}
+                initial={{ opacity: 0, x: 18, scale: 0.98 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: -18, scale: 0.98 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="max-h-40 w-full object-contain drop-shadow-2xl"
+                draggable={false}
+              />
+            </AnimatePresence>
+
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={!hasMultiple}
+              className="absolute right-0 z-10 flex h-9 w-9 items-center justify-center rounded-full border bg-background/80 text-muted-foreground backdrop-blur transition hover:text-foreground disabled:cursor-default disabled:opacity-35"
+              aria-label="Next vehicle"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="relative mt-2 text-center">
+            <div className="text-lg font-semibold truncate">{activeVehicle.name}</div>
+            <div className="mt-3 flex items-center justify-center gap-1.5">
+              {vehicles.map((vehicle, index) => (
+                <button
+                  key={vehicle.id}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  className="h-2 rounded-full transition-all"
+                  style={{
+                    width: index === activeIndex ? 22 : 8,
+                    background: index === activeIndex ? 'rgb(var(--primary))' : 'rgb(var(--muted-foreground) / 0.3)',
+                  }}
+                  aria-label={`Show ${vehicle.name}`}
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {activeIndex + 1} of {vehicles.length}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-56 text-muted-foreground text-sm gap-2 rounded-2xl bg-muted/30">
+          <CarFront className="w-8 h-8 opacity-25" />
+          No vehicles added yet
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -868,7 +947,7 @@ function AssetTypeCards({ data, navigate }) {
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [transfers, setTransfers] = useState([]);
-  const [employeeAssets, setEmployeeAssets] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [subs, setSubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -894,7 +973,6 @@ export default function DashboardPage() {
         const appSettings = settingsRes.data || {};
         const chosenCurrency = appSettings.dashboardCurrency || 'USD';
         const transfersLimit = appSettings.recentTransfersCount || 5;
-        const employeesLimit = appSettings.topEmployeesCount || 5;
 
         setStats(statsRes.data);
         setDisplayCurrency(chosenCurrency);
@@ -908,46 +986,14 @@ export default function DashboardPage() {
         setLoading(false);
 
         // Step 2: Load secondary data in background (non-blocking)
-        const [transfersRes, employeesRes, subsRes] = await Promise.all([
+        const [transfersRes, vehiclesRes, subsRes] = await Promise.all([
           cachedAPI('transfers', () => transfersAPI.getAll()).catch(() => ({ data: [] })),
-          cachedAPI('employees', () => employeesAPI.getAll()).catch(() => ({ data: [] })),
+          cachedAPI('vehicles', () => vehiclesAPI.getAll()).catch(() => ({ data: [] })),
           cachedAPI('subscriptions', () => subscriptionsAPI.getAll()).catch(() => ({ data: [] })),
         ]);
 
         setTransfers((transfersRes.data || []).slice(0, transfersLimit));
-        
-        // Map employees with asset counts
-        let emps = (employeesRes.data || [])
-          .map(e => ({ ...e, assetCount: e.assetCount || e._count?.assets || 0 }))
-          .filter(e => e.assetCount > 0);
-
-        // Apply sorting based on dashboardEmployeeSort setting
-        const sortSetting = appSettings.dashboardEmployeeSort || 'assets-desc';
-        const [sortField, sortOrder] = sortSetting.split('-');
-        
-        emps.sort((a, b) => {
-          let compareA, compareB;
-          
-          if (sortField === 'employeeId') {
-            compareA = a.employeeId || '';
-            compareB = b.employeeId || '';
-          } else if (sortField === 'name') {
-            compareA = (a.name || '').toLowerCase();
-            compareB = (b.name || '').toLowerCase();
-          } else if (sortField === 'assets') {
-            compareA = a.assetCount;
-            compareB = b.assetCount;
-          }
-          
-          if (sortOrder === 'asc') {
-            return compareA > compareB ? 1 : compareA < compareB ? -1 : 0;
-          } else {
-            return compareA < compareB ? 1 : compareA > compareB ? -1 : 0;
-          }
-        });
-
-        emps = emps.slice(0, employeesLimit);
-        setEmployeeAssets(emps);
+        setVehicles(vehiclesRes.data || []);
         setSubs(subsRes.data || []);
 
         // Step 3: Exchange rate — fire and forget, never blocks UI
@@ -978,7 +1024,6 @@ export default function DashboardPage() {
   if (loading) return <LoadingPage />;
 
   const assignedPct = stats?.totalAssets ? Math.round((stats.assignedAssets / stats.totalAssets) * 100) : 0;
-  const maxEmp = Math.max(...employeeAssets.map(e => e.assetCount || 0), 1);
 
   return (
     <div className="space-y-6 pb-8" data-testid="dashboard-page">
@@ -1046,7 +1091,7 @@ export default function DashboardPage() {
         </motion.div>
       </div>
 
-      {/* Bottom row - transfers + employees */}
+      {/* Bottom row - transfers + vehicle fleet */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
           className="rounded-2xl border bg-card p-6">
@@ -1068,25 +1113,7 @@ export default function DashboardPage() {
           }
         </motion.div>
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-          className="rounded-2xl border bg-card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Users className="w-4 h-4 text-primary" />
-              </div>
-              <h2 className="font-semibold text-base">Employees by Assets</h2>
-            </div>
-            <button onClick={() => navigate('/employees')}
-              className="text-xs text-primary hover:underline flex items-center gap-1 transition-opacity hover:opacity-80">
-              View all <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          {employeeAssets.length > 0
-            ? employeeAssets.map((emp, i) => <EmployeeRow key={emp.id} emp={emp} index={i} max={maxEmp} />)
-            : <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">No assigned assets yet</div>
-          }
-        </motion.div>
+        <VehicleFleetWidget vehicles={vehicles} navigate={navigate} />
       </div>
 
       {/* New bottom row — Subscriptions + DB Storage */}
