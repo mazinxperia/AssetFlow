@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, DollarSign, Eye, RefreshCw, Clock, Calendar, MessageSquare, Filter, ListChecks } from 'lucide-react';
+import { Loader2, DollarSign, Eye, RefreshCw, Calendar, MessageSquare, Filter, ListChecks } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
@@ -56,7 +56,6 @@ export function DashboardSettings() {
   const [showSubscriptionCosts, setShowSubscriptionCosts] = useState(true);
   const [showDbStorage, setShowDbStorage] = useState(true);
   const [dateFormat, setDateFormat] = useState('MMM DD, YYYY');
-  const [expiryWarningDays, setExpiryWarningDays] = useState('30');
   const [refreshInterval, setRefreshInterval] = useState('0');
   const [recentTransfersCount, setRecentTransfersCount] = useState('5');
   const [welcomeMessage, setWelcomeMessage] = useState('');
@@ -76,7 +75,6 @@ export function DashboardSettings() {
       setShowSubscriptionCosts(d.showSubscriptionCosts !== false);
       setShowDbStorage(d.showDbStorage !== false);
       setDateFormat(d.dateFormat || 'MMM DD, YYYY');
-      setExpiryWarningDays(String(d.expiryWarningDays || 30));
       setRefreshInterval(String(d.refreshInterval || 0));
       setRecentTransfersCount(String(d.recentTransfersCount || 5));
       setWelcomeMessage(d.welcomeMessage || '');
@@ -104,7 +102,6 @@ export function DashboardSettings() {
         showSubscriptionCosts,
         showDbStorage,
         dateFormat,
-        expiryWarningDays: parseInt(expiryWarningDays) || 30,
         refreshInterval: parseInt(refreshInterval) || 0,
         recentTransfersCount: parseInt(recentTransfersCount) || 5,
         welcomeMessage,
@@ -193,25 +190,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 3. Subscription Expiry Warning */}
-      <Card>
-        <SectionHeader icon={Clock} title="Expiry Warning Threshold"
-          description="Show 'expiring soon' warning this many days before renewal date" />
-        <CardContent>
-          <Select value={expiryWarningDays} onValueChange={setExpiryWarningDays}>
-            <SelectTrigger className="w-72"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">7 days</SelectItem>
-              <SelectItem value="14">14 days</SelectItem>
-              <SelectItem value="30">30 days</SelectItem>
-              <SelectItem value="60">60 days</SelectItem>
-              <SelectItem value="90">90 days</SelectItem>
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
-      {/* 4. Auto Refresh */}
+      {/* 3. Auto Refresh */}
       <Card>
         <SectionHeader icon={RefreshCw} title="Auto Refresh"
           description="Automatically refresh dashboard data in the background" />
@@ -229,7 +208,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 5. List Counts */}
+      {/* 4. List Counts */}
       <Card>
         <SectionHeader icon={ListChecks} title="Dashboard Lists"
           description="How many recent records to show in dashboard list widgets" />
@@ -248,7 +227,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 6. Default Asset Filter */}
+      {/* 5. Default Asset Filter */}
       <Card>
         <SectionHeader icon={Filter} title="Default Asset Filter"
           description="Which filter is applied when you open the Assets page" />
@@ -264,7 +243,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 7. Welcome Message */}
+      {/* 6. Welcome Message */}
       <Card>
         <SectionHeader icon={MessageSquare} title="Welcome Message"
           description="Custom message shown under the Dashboard heading. Leave blank for default." />
@@ -278,7 +257,7 @@ export function DashboardSettings() {
         </CardContent>
       </Card>
 
-      {/* 8. Widget Visibility */}
+      {/* 7. Widget Visibility */}
       <Card>
         <SectionHeader icon={Eye} title="Widget Visibility"
           description="Choose which widgets appear on the dashboard" />

@@ -9,7 +9,7 @@ import {
   ChevronDown,
   Eye,
   Edit,
-  Trash2,
+  ArchiveX,
   ArrowLeftRight
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
@@ -18,6 +18,7 @@ import { LoadingPage } from '../components/common/LoadingSpinner';
 import { ExportDropdown } from '../components/common/ExportDropdown';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
 import {
   Table,
@@ -52,6 +53,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialog, setDeleteDialog] = useState({ open: false, asset: null });
+  const [disposeReason, setDisposeReason] = useState('');
 
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try {
@@ -123,15 +125,21 @@ export default function InventoryPage() {
 
   const handleDelete = async () => {
     if (!deleteDialog.asset) return;
+    const reason = disposeReason.trim();
+    if (!reason) {
+      toast.error('Please add a disposal reason');
+      return;
+    }
     try {
-      await assetsAPI.delete(deleteDialog.asset.id);
-      invalidateCache(['inventory', 'assets', 'dashboard-stats']);
+      await assetsAPI.dispose(deleteDialog.asset.id, { reason });
+      invalidateCache(['inventory', 'assets', 'dashboard-stats', 'disposed-assets']);
       setInventory(prev => prev.filter(a => a.id !== deleteDialog.asset.id));
-      toast.success('Asset deleted successfully');
+      toast.success('Asset moved to disposed assets');
     } catch (error) {
       toast.error('Failed to delete asset');
     } finally {
       setDeleteDialog({ open: false, asset: null });
+      setDisposeReason('');
     }
   };
 
@@ -285,10 +293,10 @@ export default function InventoryPage() {
                                       variant="ghost"
                                       size="icon"
                                       className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                      title="Delete"
-                                      onClick={(e) => { e.stopPropagation(); setDeleteDialog({ open: true, asset }); }}
+                                      title="Dispose"
+                                      onClick={(e) => { e.stopPropagation(); setDisposeReason(''); setDeleteDialog({ open: true, asset }); }}
                                     >
-                                      <Trash2 className="w-4 h-4" />
+                                      <ArchiveX className="w-4 h-4" />
                                     </Button>
                                   </>
                                 )}
@@ -305,18 +313,40 @@ export default function InventoryPage() {
           ))}
         </div>
       )}
-      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ open, asset: null })}>
+      <AlertDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setDisposeReason('');
+          setDeleteDialog({ open, asset: open ? deleteDialog.asset : null });
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Asset</AlertDialogTitle>
+            <AlertDialogTitle>Dispose Asset</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this asset? This action cannot be undone.
+              Move this asset out of inventory and into Disposed Assets. You can restore it later.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="dispose-reason-inventory">
+              Reason for disposal <span className="text-destructive">*</span>
+            </label>
+            <Textarea
+              id="dispose-reason-inventory"
+              value={disposeReason}
+              onChange={(event) => setDisposeReason(event.target.value)}
+              placeholder="Example: Damaged beyond repair, retired, lost, replaced..."
+              rows={3}
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={!disposeReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+            >
+              Dispose
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

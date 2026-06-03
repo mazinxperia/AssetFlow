@@ -9,7 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from bson import ObjectId
 import os
 from dotenv import load_dotenv
@@ -23,6 +23,7 @@ import secrets
 import io
 import csv
 import time
+import calendar
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -163,6 +164,9 @@ class AssetUpdate(BaseModel):
     imageUrl: Optional[str] = None
     fieldValues: Optional[Dict[str, Any]] = None
 
+class AssetDisposeRequest(BaseModel):
+    reason: Optional[str] = None
+
 class VehicleCreate(BaseModel):
     name: str
     imageFileId: str
@@ -269,6 +273,173 @@ def backup_doc(doc):
 def serialize_docs(docs):
     """Convert list of MongoDB documents"""
     return [serialize_doc(doc) for doc in docs]
+
+def active_asset_query(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Match assets that are still in service.
+
+    Older assets do not have lifecycleStatus yet, so missing status means active.
+    """
+    active_clause = {"$or": [{"lifecycleStatus": {"$exists": False}}, {"lifecycleStatus": "active"}]}
+    if not extra:
+        return active_clause
+    return {"$and": [active_clause, extra]}
+
+def disposed_asset_query(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    disposed_clause = {"lifecycleStatus": "disposed"}
+    if not extra:
+        return disposed_clause
+    return {"$and": [disposed_clause, extra]}
+
+def parse_subscription_date(value) -> Optional[date]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except Exception:
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+def add_months_safely(date_value, months: int):
+    month_index = date_value.month - 1 + months
+    year = date_value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(date_value.day, calendar.monthrange(year, month)[1])
+    return date_value.replace(year=year, month=month, day=day)
+
+def add_subscription_cycle(date_value, billing_cycle: str):
+    cycle = (billing_cycle or "").strip().lower()
+    if cycle == "per month":
+        return add_months_safely(date_value, 1)
+    if cycle == "per year":
+        return add_months_safely(date_value, 12)
+    return None
+
+def is_auto_recurring_subscription(sub: Dict[str, Any]) -> bool:
+    return (sub.get("autopay") or "").strip().lower() == "auto" and (sub.get("billingCycle") or "").strip().lower() in {"per month", "per year"}
+
+def is_recurring_subscription(sub: Dict[str, Any]) -> bool:
+    return (sub.get("billingCycle") or "").strip().lower() in {"per month", "per year"}
+
+async def get_subscription_warning_days() -> int:
+    app_settings = await settings_collection.find_one({"type": "app"}) or {}
+    raw = app_settings.get("subscriptionWarningDays", app_settings.get("expiryWarningDays", 7))
+    try:
+        days = int(raw)
+    except Exception:
+        days = 7
+    return max(1, min(days, 7))
+
+def strip_subscription_computed_fields(data: Dict[str, Any]) -> Dict[str, Any]:
+    computed_keys = {
+        "id", "_id", "renewalStatus", "renewalStatusLabel", "daysUntilRenewal",
+        "isAutoRecurring", "needsManualRenewal", "subscriptionWarningDays",
+    }
+    return {k: v for k, v in data.items() if k not in computed_keys}
+
+async def normalize_subscription_renewal(sub: Dict[str, Any], warning_days: Optional[int] = None) -> Dict[str, Any]:
+    """Decorate subscriptions with renewal state and roll auto-pay renewals forward."""
+    if not sub:
+        return sub
+
+    if warning_days is None:
+        warning_days = await get_subscription_warning_days()
+
+    today = datetime.now(timezone.utc).date()
+    renewal_date = parse_subscription_date(sub.get("renewalDate"))
+    is_auto = is_auto_recurring_subscription(sub)
+    is_recurring = is_recurring_subscription(sub)
+
+    sub["isAutoRecurring"] = is_auto
+    sub["subscriptionWarningDays"] = warning_days
+    sub["daysUntilRenewal"] = (renewal_date - today).days if renewal_date else None
+    sub["needsManualRenewal"] = False
+    sub["renewalStatus"] = "active"
+    sub["renewalStatusLabel"] = "Active"
+
+    if not renewal_date:
+        return sub
+
+    if is_auto:
+        if renewal_date < today:
+            next_date = renewal_date
+            for _ in range(240):
+                next_cycle = add_subscription_cycle(next_date, sub.get("billingCycle"))
+                if not next_cycle:
+                    break
+                next_date = next_cycle
+                if next_date >= today:
+                    break
+
+            if next_date >= today and next_date != renewal_date:
+                next_date_string = next_date.isoformat()
+                now = datetime.now(timezone.utc)
+                await subscriptions_collection.update_one(
+                    {"_id": sub["_id"]},
+                    {
+                        "$set": {
+                            "renewalDate": next_date_string,
+                            "lastAutoRenewedAt": now,
+                            "updatedAt": now,
+                        }
+                    },
+                )
+                sub["renewalDate"] = next_date_string
+                sub["lastAutoRenewedAt"] = now
+                sub["updatedAt"] = now
+                renewal_date = next_date
+
+        sub["daysUntilRenewal"] = (renewal_date - today).days
+        sub["renewalStatus"] = "auto_renewing"
+        sub["renewalStatusLabel"] = "Auto-renewing"
+        sub["needsManualRenewal"] = False
+        return sub
+
+    days_until = (renewal_date - today).days
+    sub["daysUntilRenewal"] = days_until
+    if days_until < 0:
+        sub["renewalStatus"] = "expired"
+        sub["renewalStatusLabel"] = "Renewal required" if is_recurring else "Expired"
+        sub["needsManualRenewal"] = is_recurring
+    elif days_until <= warning_days:
+        sub["renewalStatus"] = "expiring_soon"
+        sub["renewalStatusLabel"] = "Renewal due soon" if is_recurring else "Expiring soon"
+        sub["needsManualRenewal"] = is_recurring
+    return sub
+
+async def normalize_subscriptions(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    warning_days = await get_subscription_warning_days()
+    return [await normalize_subscription_renewal(doc, warning_days) for doc in docs]
+
+async def get_user_preferences(user_id: str) -> Dict[str, Any]:
+    user = await users_collection.find_one({"_id": ObjectId(user_id)}, {"preferences": 1})
+    prefs = (user or {}).get("preferences") or {}
+    return {
+        "theme": prefs.get("theme") if prefs.get("theme") in {"light", "dark"} else None,
+        "glassMode": prefs.get("glassMode") if isinstance(prefs.get("glassMode"), bool) else None,
+        "accentColor": prefs.get("accentColor") if isinstance(prefs.get("accentColor"), str) else None,
+        "musicPlayState": prefs.get("musicPlayState") if prefs.get("musicPlayState") in {"playing", "paused"} else "playing",
+    }
+
+def normalize_user_preferences(data: Dict[str, Any]) -> Dict[str, Any]:
+    allowed = {}
+    if data.get("theme") in {"light", "dark"}:
+        allowed["preferences.theme"] = data["theme"]
+    if isinstance(data.get("glassMode"), bool):
+        allowed["preferences.glassMode"] = data["glassMode"]
+    if isinstance(data.get("accentColor"), str):
+        color = data["accentColor"].strip()
+        if color.startswith("#") and len(color) == 7:
+            allowed["preferences.accentColor"] = color
+    if data.get("musicPlayState") in {"playing", "paused"}:
+        allowed["preferences.musicPlayState"] = data["musicPlayState"]
+    return allowed
 
 def serialize_music_track(track):
     """Return music metadata without exposing storage internals."""
@@ -968,6 +1139,7 @@ async def startup_event():
             "email": "admin@local.internal",
             "password": hash_password("Admin123!"),
             "role": "SUPER_ADMIN",
+            "preferences": {"musicPlayState": "playing"},
             "createdAt": datetime.now(timezone.utc),
             "updatedAt": datetime.now(timezone.utc)
         })
@@ -1013,17 +1185,22 @@ async def startup_event():
         await settings_collection.insert_one({
             "type": "app",
             "dashboardPreviewMax": 5,
+            "subscriptionWarningDays": 7,
             "accentColor": "#4F46E5",
             "wallpaperFileId": None,
             "glassMode": False,
             "createdAt": datetime.now(timezone.utc),
             "updatedAt": datetime.now(timezone.utc)
         })
-    elif "glassMode" not in app_settings:
-        await settings_collection.update_one(
-            {"type": "app"},
-            {"$set": {"glassMode": False, "updatedAt": datetime.now(timezone.utc)}}
-        )
+    else:
+        app_defaults = {}
+        if "glassMode" not in app_settings:
+            app_defaults["glassMode"] = False
+        if "subscriptionWarningDays" not in app_settings:
+            app_defaults["subscriptionWarningDays"] = int(app_settings.get("expiryWarningDays", 7) or 7)
+        if app_defaults:
+            app_defaults["updatedAt"] = datetime.now(timezone.utc)
+            await settings_collection.update_one({"type": "app"}, {"$set": app_defaults})
 
     # Create default music player settings
     music_settings = await settings_collection.find_one({"type": "music"})
@@ -1063,24 +1240,50 @@ async def login(data: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     token = create_token(str(user["_id"]), user["role"])
+    preferences = await get_user_preferences(str(user["_id"]))
     return {
         "token": token,
         "user": {
             "id": str(user["_id"]),
             "name": user["name"],
             "email": user["email"],
-            "role": user["role"]
+            "role": user["role"],
+            "preferences": preferences,
         }
     }
 
 @app.get("/api/auth/me")
 async def get_me(user: dict = Depends(get_current_user)):
+    preferences = await get_user_preferences(user["id"])
     return {"user": {
         "id": user["id"],
         "name": user["name"],
         "email": user["email"],
-        "role": user["role"]
+        "role": user["role"],
+        "preferences": preferences,
     }}
+
+@app.get("/api/users/me/preferences")
+async def get_my_preferences(user: dict = Depends(get_current_user)):
+    preferences = await get_user_preferences(user["id"])
+    app_settings = await settings_collection.find_one({"type": "app"}) or {}
+    return {
+        **preferences,
+        "accentColor": preferences.get("accentColor") or app_settings.get("accentColor", "#4F46E5"),
+        "glassMode": preferences.get("glassMode") if preferences.get("glassMode") is not None else bool(app_settings.get("glassMode", False)),
+        "globalAccentColor": app_settings.get("accentColor", "#4F46E5"),
+        "globalGlassMode": bool(app_settings.get("glassMode", False)),
+        "wallpaperFileId": app_settings.get("wallpaperFileId"),
+    }
+
+@app.put("/api/users/me/preferences")
+async def update_my_preferences(data: dict, user: dict = Depends(get_current_user)):
+    update_data = normalize_user_preferences(data)
+    if not update_data:
+        return await get_my_preferences(user)
+    update_data["updatedAt"] = datetime.now(timezone.utc)
+    await users_collection.update_one({"_id": ObjectId(user["id"])}, {"$set": update_data})
+    return await get_my_preferences(user)
 
 @app.post("/api/auth/change-password")
 async def change_password(data: PasswordChange, user: dict = Depends(get_current_user)):
@@ -1466,6 +1669,7 @@ async def create_user(data: UserCreate, user: dict = Depends(get_current_user)):
         "email": data.email,
         "password": hash_password(data.password),
         "role": data.role,
+        "preferences": {"musicPlayState": "playing"},
         "createdAt": datetime.now(timezone.utc),
         "updatedAt": datetime.now(timezone.utc)
     }
@@ -1525,7 +1729,7 @@ async def get_employees(user: dict = Depends(get_current_user)):
     result = []
     for emp in employees:
         emp_dict = serialize_doc(emp)
-        asset_count = await assets_collection.count_documents({"assignedEmployeeId": emp_dict["id"]})
+        asset_count = await assets_collection.count_documents(active_asset_query({"assignedEmployeeId": emp_dict["id"]}))
         emp_dict["_count"] = {"assets": asset_count}
         result.append(emp_dict)
     return result
@@ -1539,7 +1743,7 @@ async def get_employee(employee_id: str, user: dict = Depends(get_current_user))
 
 @app.get("/api/employees/{employee_id}/assets")
 async def get_employee_assets(employee_id: str, user: dict = Depends(get_current_user)):
-    assets = await assets_collection.find({"assignedEmployeeId": employee_id}).to_list(1000)
+    assets = await assets_collection.find(active_asset_query({"assignedEmployeeId": employee_id})).to_list(1000)
     result = []
     for asset in assets:
         asset_dict = serialize_doc(asset)
@@ -2010,10 +2214,21 @@ async def delete_asset_field(type_id: str, field_id: str, user: dict = Depends(g
 # ============== ASSETS ENDPOINTS ==============
 
 @app.get("/api/assets")
-async def get_assets(inventoryOnly: bool = False, user: dict = Depends(get_current_user)):
+async def get_assets(
+    inventoryOnly: bool = False,
+    disposedOnly: bool = False,
+    includeDisposed: bool = False,
+    user: dict = Depends(get_current_user)
+):
     query = {}
+    if disposedOnly:
+        query = disposed_asset_query()
+    elif not includeDisposed:
+        query = active_asset_query()
+
     if inventoryOnly:
-        query["assignedEmployeeId"] = {"$in": [None, ""]}
+        inventory_clause = {"$or": [{"assignedEmployeeId": None}, {"assignedEmployeeId": {"$exists": False}}, {"assignedEmployeeId": ""}]}
+        query = active_asset_query(inventory_clause)
 
     assets = await assets_collection.find(query).to_list(10000)
 
@@ -2088,6 +2303,7 @@ async def create_asset(data: AssetCreate, user: dict = Depends(get_current_user)
     new_asset = {
         **data.dict(),
         "assetTag": asset_tag,
+        "lifecycleStatus": "active",
         "createdAt": datetime.now(timezone.utc),
         "updatedAt": datetime.now(timezone.utc)
     }
@@ -2130,6 +2346,55 @@ async def delete_asset(asset_id: str, user: dict = Depends(get_current_user)):
     
     return {"message": "Asset deleted"}
 
+@app.post("/api/assets/{asset_id}/dispose")
+async def dispose_asset(asset_id: str, data: Optional[AssetDisposeRequest] = None, user: dict = Depends(get_current_user)):
+    require_admin(user)
+
+    asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    now = datetime.now(timezone.utc)
+    update_data = {
+        "lifecycleStatus": "disposed",
+        "assignedEmployeeId": None,
+        "disposedAt": now,
+        "disposedBy": user["id"],
+        "updatedAt": now,
+    }
+    if data and data.reason:
+        update_data["disposalReason"] = data.reason.strip()
+
+    await assets_collection.update_one({"_id": ObjectId(asset_id)}, {"$set": update_data})
+    updated = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    return serialize_doc(updated)
+
+@app.post("/api/assets/{asset_id}/restore")
+async def restore_asset(asset_id: str, user: dict = Depends(get_current_user)):
+    require_admin(user)
+
+    asset = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    await assets_collection.update_one(
+        {"_id": ObjectId(asset_id)},
+        {
+            "$set": {
+                "lifecycleStatus": "active",
+                "assignedEmployeeId": None,
+                "updatedAt": datetime.now(timezone.utc),
+            },
+            "$unset": {
+                "disposedAt": "",
+                "disposedBy": "",
+                "disposalReason": "",
+            }
+        }
+    )
+    updated = await assets_collection.find_one({"_id": ObjectId(asset_id)})
+    return serialize_doc(updated)
+
 @app.post("/api/assets/{asset_id}/duplicate")
 async def duplicate_asset(asset_id: str, user: dict = Depends(get_current_user)):
     require_admin(user)
@@ -2149,6 +2414,7 @@ async def duplicate_asset(asset_id: str, user: dict = Depends(get_current_user))
         "assetTag": new_tag,
         "assetTypeId": asset.get("assetTypeId"),
         "assignedEmployeeId": None,
+        "lifecycleStatus": "active",
         "imageUrl": asset.get("imageUrl"),
         "fieldValues": asset.get("fieldValues", {}),
         "createdAt": datetime.now(timezone.utc),
@@ -2966,14 +3232,17 @@ async def restore_backup(data: dict, user: dict = Depends(get_current_user)):
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     total_employees = await employees_collection.count_documents({})
-    total_assets = await assets_collection.count_documents({})
-    assigned_assets = await assets_collection.count_documents({"assignedEmployeeId": {"$ne": None, "$exists": True}})
+    total_assets = await assets_collection.count_documents(active_asset_query())
+    assigned_assets = await assets_collection.count_documents(active_asset_query({
+        "assignedEmployeeId": {"$exists": True, "$nin": [None, ""]}
+    }))
     inventory_assets = total_assets - assigned_assets
+    disposed_assets = await assets_collection.count_documents(disposed_asset_query())
     
     asset_types = await asset_types_collection.find({}).to_list(100)
     assets_by_type = []
     for asset_type in asset_types:
-        count = await assets_collection.count_documents({"assetTypeId": str(asset_type["_id"])})
+        count = await assets_collection.count_documents(active_asset_query({"assetTypeId": str(asset_type["_id"])}))
         assets_by_type.append({
             "id": str(asset_type["_id"]),
             "name": asset_type["name"],
@@ -2986,6 +3255,7 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
         "totalAssets": total_assets,
         "assignedAssets": assigned_assets,
         "inventoryAssets": inventory_assets,
+        "disposedAssets": disposed_assets,
         "assetsByType": assets_by_type
     }
 
@@ -3000,7 +3270,7 @@ async def get_dashboard_preview(type: str, user: dict = Depends(get_current_user
         return {"items": [{"id": str(e["_id"]), "name": e["name"]} for e in employees]}
     
     elif type == "assets":
-        assets = await assets_collection.find({}).limit(max_items).to_list(max_items)
+        assets = await assets_collection.find(active_asset_query()).limit(max_items).to_list(max_items)
         result = []
         for asset in assets:
             asset_type = await asset_types_collection.find_one({"_id": ObjectId(asset["assetTypeId"])}) if asset.get("assetTypeId") else None
@@ -3012,7 +3282,9 @@ async def get_dashboard_preview(type: str, user: dict = Depends(get_current_user
         return {"items": result}
     
     elif type == "assigned":
-        assets = await assets_collection.find({"assignedEmployeeId": {"$ne": None, "$exists": True}}).limit(max_items).to_list(max_items)
+        assets = await assets_collection.find(active_asset_query({
+            "assignedEmployeeId": {"$exists": True, "$nin": [None, ""]}
+        })).limit(max_items).to_list(max_items)
         result = []
         for asset in assets:
             emp = await employees_collection.find_one({"_id": ObjectId(asset["assignedEmployeeId"])}) if asset.get("assignedEmployeeId") else None
@@ -3024,14 +3296,20 @@ async def get_dashboard_preview(type: str, user: dict = Depends(get_current_user
         return {"items": result}
     
     elif type == "inventory":
-        assets = await assets_collection.find({"$or": [{"assignedEmployeeId": None}, {"assignedEmployeeId": {"$exists": False}}]}).limit(max_items).to_list(max_items)
+        assets = await assets_collection.find(active_asset_query({
+            "$or": [{"assignedEmployeeId": None}, {"assignedEmployeeId": {"$exists": False}}, {"assignedEmployeeId": ""}]
+        })).limit(max_items).to_list(max_items)
         return {"items": [{"id": str(a["_id"]), "assetTag": a["assetTag"]} for a in assets]}
+
+    elif type == "disposed":
+        assets = await assets_collection.find(disposed_asset_query()).sort("disposedAt", -1).limit(max_items).to_list(max_items)
+        return {"items": [{"id": str(a["_id"]), "assetTag": a["assetTag"], "reason": a.get("disposalReason")} for a in assets]}
     
     elif type == "assetsByType":
         asset_types = await asset_types_collection.find({}).to_list(100)
         result = []
         for asset_type in asset_types:
-            count = await assets_collection.count_documents({"assetTypeId": str(asset_type["_id"])})
+            count = await assets_collection.count_documents(active_asset_query({"assetTypeId": str(asset_type["_id"])}))
             if count > 0:
                 result.append({"name": asset_type["name"], "count": count})
         return {"items": result[:max_items]}
@@ -3041,7 +3319,7 @@ async def get_dashboard_preview(type: str, user: dict = Depends(get_current_user
         result = []
         for emp in employees:
             emp_id = str(emp["_id"])
-            count = await assets_collection.count_documents({"assignedEmployeeId": emp_id})
+            count = await assets_collection.count_documents(active_asset_query({"assignedEmployeeId": emp_id}))
             if count > 0:
                 result.append({
                     "id": emp_id,
@@ -3061,7 +3339,7 @@ async def search(q: str, user: dict = Depends(get_current_user)):
     if len(q) < 2:
         return {"assets": [], "employees": []}
     
-    assets = await assets_collection.find({
+    assets = await assets_collection.find(active_asset_query({
         "$or": [
             {"assetTag": {"$regex": q, "$options": "i"}},
             {"$expr": {
@@ -3082,7 +3360,7 @@ async def search(q: str, user: dict = Depends(get_current_user)):
                 ]
             }}
         ]
-    }).limit(10).to_list(10)
+    })).limit(10).to_list(10)
     
     asset_results = []
     for asset in assets:
@@ -3128,7 +3406,7 @@ async def search(q: str, user: dict = Depends(get_current_user)):
     employee_results = []
     for emp in employees:
         emp_dict = serialize_doc(emp)
-        asset_count = await assets_collection.count_documents({"assignedEmployeeId": emp_dict["id"]})
+        asset_count = await assets_collection.count_documents(active_asset_query({"assignedEmployeeId": emp_dict["id"]}))
         emp_dict["assetCount"] = asset_count
         employee_results.append(emp_dict)
     
@@ -3256,6 +3534,11 @@ async def get_app_settings(user: dict = Depends(get_current_user)):
 async def update_app_settings(data: dict, user: dict = Depends(get_current_user)):
     require_super_admin(user)
     
+    if "subscriptionWarningDays" in data:
+        try:
+            data["subscriptionWarningDays"] = max(1, min(int(data["subscriptionWarningDays"]), 7))
+        except Exception:
+            data["subscriptionWarningDays"] = 7
     data["updatedAt"] = datetime.now(timezone.utc)
     await settings_collection.update_one(
         {"type": "app"},
@@ -3613,7 +3896,8 @@ async def clear_all_data(user: dict = Depends(get_current_user)):
 @app.get("/api/subscriptions")
 async def get_subscriptions(user: dict = Depends(get_current_user)):
     docs = await subscriptions_collection.find({}).sort("createdAt", -1).to_list(1000)
-    return serialize_docs(docs)
+    normalized = await normalize_subscriptions(docs)
+    return serialize_docs(normalized)
 
 
 # ============== FETCH LOGO / FAVICON FOR SUBSCRIPTIONS ==============
@@ -3660,28 +3944,74 @@ async def get_subscription(sub_id: str, user: dict = Depends(get_current_user)):
     doc = await subscriptions_collection.find_one({"_id": ObjectId(sub_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Subscription not found")
+    doc = await normalize_subscription_renewal(doc)
     return serialize_doc(doc)
 
 @app.post("/api/subscriptions")
 async def create_subscription(data: dict, user: dict = Depends(get_current_user)):
     if user.get("role") == "USER":
         raise HTTPException(status_code=403, detail="Not allowed")
+    data = strip_subscription_computed_fields(data)
     data["createdAt"] = datetime.now(timezone.utc)
     data["updatedAt"] = datetime.now(timezone.utc)
-    data.pop("id", None)
     result = await subscriptions_collection.insert_one(data)
     doc = await subscriptions_collection.find_one({"_id": result.inserted_id})
+    doc = await normalize_subscription_renewal(doc)
     return serialize_doc(doc)
 
 @app.put("/api/subscriptions/{sub_id}")
 async def update_subscription(sub_id: str, data: dict, user: dict = Depends(get_current_user)):
     if user.get("role") == "USER":
         raise HTTPException(status_code=403, detail="Not allowed")
+    data = strip_subscription_computed_fields(data)
     data["updatedAt"] = datetime.now(timezone.utc)
-    data.pop("id", None)
     await subscriptions_collection.update_one({"_id": ObjectId(sub_id)}, {"$set": data})
     doc = await subscriptions_collection.find_one({"_id": ObjectId(sub_id)})
+    doc = await normalize_subscription_renewal(doc)
     return serialize_doc(doc)
+
+@app.post("/api/subscriptions/{sub_id}/renew")
+async def renew_subscription(sub_id: str, user: dict = Depends(get_current_user)):
+    require_admin(user)
+    doc = await subscriptions_collection.find_one({"_id": ObjectId(sub_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    if is_auto_recurring_subscription(doc):
+        normalized = await normalize_subscription_renewal(doc)
+        return serialize_doc(normalized)
+
+    renewal_date = parse_subscription_date(doc.get("renewalDate")) or datetime.now(timezone.utc).date()
+    if not is_recurring_subscription(doc):
+        raise HTTPException(status_code=400, detail="Only monthly or yearly subscriptions can be renewed automatically")
+
+    today = datetime.now(timezone.utc).date()
+    next_date = add_subscription_cycle(renewal_date, doc.get("billingCycle"))
+    if not next_date:
+        raise HTTPException(status_code=400, detail="Unsupported billing cycle")
+
+    for _ in range(240):
+        if next_date >= today:
+            break
+        next_cycle = add_subscription_cycle(next_date, doc.get("billingCycle"))
+        if not next_cycle:
+            break
+        next_date = next_cycle
+
+    now = datetime.now(timezone.utc)
+    await subscriptions_collection.update_one(
+        {"_id": ObjectId(sub_id)},
+        {
+            "$set": {
+                "renewalDate": next_date.isoformat(),
+                "lastRenewedAt": now,
+                "renewedBy": user["id"],
+                "updatedAt": now,
+            }
+        }
+    )
+    updated = await subscriptions_collection.find_one({"_id": ObjectId(sub_id)})
+    normalized = await normalize_subscription_renewal(updated)
+    return serialize_doc(normalized)
 
 @app.delete("/api/subscriptions/{sub_id}")
 async def delete_subscription(sub_id: str, user: dict = Depends(get_current_user)):

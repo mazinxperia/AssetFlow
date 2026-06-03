@@ -43,15 +43,13 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function isExpired(dateStr) {
-  if (!dateStr) return false;
-  return new Date(dateStr) < new Date();
-}
-
-function isExpiringSoon(dateStr) {
-  if (!dateStr) return false;
-  const diff = (new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24);
-  return diff >= 0 && diff <= 30;
+function getRenewalState(sub) {
+  return {
+    expired: sub.renewalStatus === 'expired',
+    expiring: sub.renewalStatus === 'expiring_soon',
+    autoRenewing: sub.renewalStatus === 'auto_renewing',
+    label: sub.renewalStatusLabel || 'Active',
+  };
 }
 
 function EmployeeMultiSelect({ employees, selected, onChange }) {
@@ -318,7 +316,7 @@ function SubscriptionFormDialog({ open, onClose, onSaved, initial, employees }) 
   );
 }
 
-function SubTable({ items, title, variant, onEdit, onDelete, onView, isReadOnly }) {
+function SubTable({ items, title, variant, onEdit, onDelete, onView, onRenew, isReadOnly }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -355,8 +353,7 @@ function SubTable({ items, title, variant, onEdit, onDelete, onView, isReadOnly 
                 </thead>
                 <tbody className="divide-y divide-border">
                   {items.map((sub, i) => {
-                    const expiring = isExpiringSoon(sub.renewalDate);
-                    const expired = isExpired(sub.renewalDate);
+                    const { expiring, expired, autoRenewing, label } = getRenewalState(sub);
                     const ids = sub.assignedEmployeeIds || (sub.assignedEmployeeId ? [sub.assignedEmployeeId] : []);
                     const empCount = ids.length;
 
@@ -414,12 +411,17 @@ function SubTable({ items, title, variant, onEdit, onDelete, onView, isReadOnly 
                           {sub.renewalDate ? (
                             <div className={cn("text-sm", expired && "text-destructive", expiring && !expired && "text-amber-500")}>
                               {formatDate(sub.renewalDate)}
-                              {expiring && !expired && (
-                                <div className="flex items-center gap-1 text-xs font-medium mt-0.5">
-                                  <AlertTriangle className="w-3 h-3" /> Expiring soon
+                              {autoRenewing && (
+                                <div className="flex items-center gap-1 text-xs font-medium text-green-500 mt-0.5">
+                                  <CheckCircle2 className="w-3 h-3" /> Auto-renewing
                                 </div>
                               )}
-                              {expired && <div className="text-xs font-medium mt-0.5">Expired</div>}
+                              {expiring && !expired && (
+                                <div className="flex items-center gap-1 text-xs font-medium mt-0.5">
+                                  <AlertTriangle className="w-3 h-3" /> {label}
+                                </div>
+                              )}
+                              {expired && <div className="text-xs font-medium mt-0.5">{label}</div>}
                             </div>
                           ) : <span className="text-muted-foreground text-sm">—</span>}
                         </td>
@@ -432,6 +434,12 @@ function SubTable({ items, title, variant, onEdit, onDelete, onView, isReadOnly 
                                 <Eye className="w-4 h-4" />
                               </Button>
                               {!isReadOnly && (<>
+                              {sub.needsManualRenewal && (
+                                <Button variant="ghost" size="sm" className="h-8 text-green-600 hover:bg-green-500/10"
+                                  onClick={e => { e.stopPropagation(); onRenew(sub); }}>
+                                  Renew
+                                </Button>
+                              )}
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 onClick={e => { e.stopPropagation(); onEdit(sub); }}>
                                 <Edit className="w-4 h-4" />
@@ -481,13 +489,28 @@ export default function SubscriptionsPage() {
     finally { setLoading(false); }
   }
 
+  const refreshData = () => {
+    invalidateCache(['subscriptions', 'dashboard-stats']);
+    fetchData();
+  };
+
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return subs.filter(s => !q || s.name?.toLowerCase().includes(q) || s.department?.toLowerCase().includes(q));
   }, [subs, searchQuery]);
 
-  const activeSubs = filtered.filter(s => !s.renewalDate || !isExpired(s.renewalDate));
-  const expiredSubs = filtered.filter(s => s.renewalDate && isExpired(s.renewalDate));
+  const activeSubs = filtered.filter(s => s.renewalStatus !== 'expired');
+  const expiredSubs = filtered.filter(s => s.renewalStatus === 'expired');
+
+  const handleRenew = async (sub) => {
+    try {
+      await subscriptionsAPI.renew(sub.id);
+      refreshData();
+      toast.success('Subscription renewed');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to renew subscription');
+    }
+  };
 
   const handleDelete = async () => {
     try {
@@ -534,19 +557,21 @@ export default function SubscriptionsPage() {
             onView={sub => navigate(`/subscriptions/${sub.id}`)}
             onEdit={s => { setEditTarget(s); setFormOpen(true); }}
             onDelete={s => setDeleteDialog({ open: true, sub: s })}
+            onRenew={handleRenew}
             isReadOnly={isReadOnly} />
           {expiredSubs.length > 0 && (
             <SubTable items={expiredSubs} title="Expired / Discontinued" variant="expired"
               onView={sub => navigate(`/subscriptions/${sub.id}`)}
               onEdit={s => { setEditTarget(s); setFormOpen(true); }}
               onDelete={s => setDeleteDialog({ open: true, sub: s })}
+              onRenew={handleRenew}
               isReadOnly={isReadOnly} />
           )}
         </div>
       )}
 
       <SubscriptionFormDialog open={formOpen} onClose={() => { setFormOpen(false); setEditTarget(null); }}
-        onSaved={fetchData} initial={editTarget} employees={employees} />
+        onSaved={refreshData} initial={editTarget} employees={employees} />
 
       <AlertDialog open={deleteDialog.open} onOpenChange={open => setDeleteDialog({ open, sub: null })}>
         <AlertDialogContent>

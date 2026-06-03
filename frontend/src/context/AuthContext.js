@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Cookies from 'js-cookie';
-import api from '../services/api';
+import api, { usersAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -65,9 +65,21 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  const updateUser = (userData) => {
+  const updateUser = useCallback((userData) => {
     setUser(prev => ({ ...prev, ...userData }));
-  };
+  }, []);
+
+  const updateUserPreferences = useCallback(async (preferences) => {
+    const response = await usersAPI.updatePreferences(preferences);
+    setUser(prev => prev ? ({
+      ...prev,
+      preferences: {
+        ...(prev.preferences || {}),
+        ...(response.data || {}),
+      }
+    }) : prev);
+    return response.data;
+  }, []);
 
   const value = {
     user,
@@ -76,6 +88,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     updateUser,
+    updateUserPreferences,
     isAuthenticated: !!user,
     // 3-role system: SUPER_ADMIN, ADMIN, USER
     isAdmin: user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN',

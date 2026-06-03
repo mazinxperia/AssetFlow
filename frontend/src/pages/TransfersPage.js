@@ -231,6 +231,7 @@ export default function TransfersPage() {
   };
 
   if (loading) return <LoadingPage />;
+  const historyMode = isReadOnly || showHistory;
 
   const contentVariants = {
     enter: { opacity: 0, x: 20 },
@@ -246,7 +247,7 @@ export default function TransfersPage() {
         description="Transfer assets between employees and inventory"
         actions={
           <div className="flex items-center gap-3">
-            {!showHistory && (
+            {!isReadOnly && !historyMode && (
               <Button 
                 variant="outline"
                 onClick={() => setShowManualDialog(true)}
@@ -256,14 +257,16 @@ export default function TransfersPage() {
                 Add Manual History
               </Button>
             )}
-            <Button 
-              variant="outline" 
-              onClick={() => setShowHistory(!showHistory)}
-              data-testid="toggle-history-btn"
-            >
-              {showHistory ? 'New Transfer' : 'View History'}
-            </Button>
-            {showHistory && (
+            {!isReadOnly && (
+              <Button
+                variant="outline"
+                onClick={() => setShowHistory(!showHistory)}
+                data-testid="toggle-history-btn"
+              >
+                {showHistory ? 'New Transfer' : 'View History'}
+              </Button>
+            )}
+            {historyMode && (
               <Button variant="outline" onClick={handleExport} data-testid="export-btn">
                 <Download className="w-4 h-4 mr-2" />
                 Export
@@ -274,13 +277,15 @@ export default function TransfersPage() {
       />
 
       {/* Manual Transfer Dialog */}
-      <ManualTransferDialog
-        open={showManualDialog}
-        onOpenChange={setShowManualDialog}
-        onSuccess={fetchData}
-      />
+      {!isReadOnly && (
+        <ManualTransferDialog
+          open={showManualDialog}
+          onOpenChange={setShowManualDialog}
+          onSuccess={fetchData}
+        />
+      )}
 
-      {showHistory ? (
+      {historyMode ? (
         // Transfer History
         <Card className="dark:border-border" data-testid="transfer-history">
           <CardHeader>
@@ -296,7 +301,7 @@ export default function TransfersPage() {
                 <TableHead></TableHead>
                 <TableHead>To</TableHead>
                 <TableHead className="text-center">Note</TableHead>
-                <TableHead className="text-center">Delete</TableHead>
+                {!isReadOnly && <TableHead className="text-center">Delete</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -351,16 +356,18 @@ export default function TransfersPage() {
                         </button>
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
-                    <TableCell className="text-center">
-                      <button onClick={() => setDeleteTransferId(transfer.id)} className="inline-flex items-center justify-center p-1.5 rounded-md hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive" title="Delete">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </TableCell>
+                    {!isReadOnly && (
+                      <TableCell className="text-center">
+                        <button onClick={() => setDeleteTransferId(transfer.id)} className="inline-flex items-center justify-center p-1.5 rounded-md hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive" title="Delete">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </TableCell>
+                    )}
                   </motion.tr>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isReadOnly ? 6 : 7} className="text-center py-8 text-muted-foreground">
                     No transfer history yet
                   </TableCell>
                 </TableRow>

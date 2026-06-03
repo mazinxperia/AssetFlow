@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowLeft, 
-  Edit, 
-  Trash2, 
+import {
+  ArrowLeft,
+  Edit,
+  Trash2,
+  ArchiveX,
   Package,
   History,
   User,
@@ -18,6 +19,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
+import { Textarea } from '../components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -49,6 +51,7 @@ export default function AssetDetailPage() {
   const [asset, setAsset] = useState(null);
   const [transfers, setTransfers] = useState([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [disposeReason, setDisposeReason] = useState('');
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [notePopup, setNotePopup] = useState(null);
   const [deleteTransferId, setDeleteTransferId] = useState(null);
@@ -74,12 +77,19 @@ export default function AssetDetailPage() {
   }, [fetchData]);
 
   const handleDelete = async () => {
+    const reason = disposeReason.trim();
+    if (!reason) {
+      toast.error('Please add a disposal reason');
+      return;
+    }
     try {
-      await assetsAPI.delete(id);
-      toast.success('Asset deleted');
+      await assetsAPI.dispose(id, { reason });
+      toast.success('Asset moved to disposed assets');
       navigate('/assets');
     } catch (error) {
-      toast.error('Failed to delete asset');
+      toast.error('Failed to dispose asset');
+    } finally {
+      setDisposeReason('');
     }
   };
 
@@ -117,6 +127,7 @@ export default function AssetDetailPage() {
   const fieldValues = asset.fieldValues || {};
   const typeFields = asset.assetType?.fields || [];
   const hasImage = !!asset.imageUrl;
+  const isDisposed = asset.lifecycleStatus === 'disposed';
 
   return (
     <>
@@ -136,15 +147,17 @@ export default function AssetDetailPage() {
                   <Edit className="w-4 h-4 mr-2" />
                   Edit
                 </Button>
-                <Button 
-                  variant="outline" 
-                  className="text-destructive"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  data-testid="delete-btn"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </Button>
+                {!isDisposed && (
+                  <Button
+                    variant="outline"
+                    className="text-destructive"
+                    onClick={() => { setDisposeReason(''); setDeleteDialogOpen(true); }}
+                    data-testid="delete-btn"
+                  >
+                    <ArchiveX className="w-4 h-4 mr-2" />
+                    Dispose
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -171,8 +184,8 @@ export default function AssetDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge variant={asset.assignedEmployeeId ? 'default' : 'secondary'}>
-                    {asset.assignedEmployeeId ? 'Assigned' : 'In Inventory'}
+                  <Badge variant={isDisposed ? 'outline' : asset.assignedEmployeeId ? 'default' : 'secondary'}>
+                    {isDisposed ? 'Disposed' : asset.assignedEmployeeId ? 'Assigned' : 'In Inventory'}
                   </Badge>
                 </div>
                 <div>
@@ -221,7 +234,7 @@ export default function AssetDetailPage() {
                   <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead className="text-center">Note</TableHead>
-                  <TableHead className="text-center">Delete</TableHead>
+                  {!isReadOnly && <TableHead className="text-center">Delete</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -236,18 +249,20 @@ export default function AssetDetailPage() {
                       <TableCell className="text-muted-foreground max-w-xs truncate text-center">
                         {transfer.notes || '-'}
                       </TableCell>
-                      <TableCell className="text-center">
-                        <Button variant="ghost" size="icon"
-                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => setDeleteTransferId(transfer.id)}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </TableCell>
+                      {!isReadOnly && (
+                        <TableCell className="text-center">
+                          <Button variant="ghost" size="icon"
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTransferId(transfer.id)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={isReadOnly ? 4 : 5} className="text-center py-8 text-muted-foreground">
                       No transfer history
                     </TableCell>
                   </TableRow>
@@ -375,23 +390,41 @@ export default function AssetDetailPage() {
       </AnimatePresence>
 
       {/* Delete Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setDisposeReason('');
+          setDeleteDialogOpen(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Asset</AlertDialogTitle>
+            <AlertDialogTitle>Dispose Asset</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{asset.assetTag}</strong>? 
-              This will also delete all transfer history for this asset. 
-              This action cannot be undone.
+              Move <strong>{asset.assetTag}</strong> out of active inventory and into Disposed Assets.
+              You can restore it later.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="dispose-reason-detail">
+              Reason for disposal <span className="text-destructive">*</span>
+            </label>
+            <Textarea
+              id="dispose-reason-detail"
+              value={disposeReason}
+              onChange={(event) => setDisposeReason(event.target.value)}
+              placeholder="Example: Damaged beyond repair, retired, lost, replaced..."
+              rows={3}
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!disposeReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
-              Delete
+              Dispose
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

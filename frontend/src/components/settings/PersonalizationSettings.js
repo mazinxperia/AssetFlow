@@ -6,7 +6,8 @@ import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Button } from '../ui/button';
 import { useTheme } from '../../context/ThemeContext';
-import { settingsAPI, filesAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { settingsAPI, filesAPI, usersAPI } from '../../services/api';
 import { toast } from 'sonner';
 
 // Predefined accent color options
@@ -22,9 +23,10 @@ const accentColors = [
   { name: 'Cyan', value: '#0891B2' },
 ];
 
-export function PersonalizationSettings() {
+export function PersonalizationSettings({ allowWallpaper = true }) {
   const { 
     theme, 
+    setTheme,
     toggleTheme, 
     glassMode, 
     setGlassMode,
@@ -32,8 +34,11 @@ export function PersonalizationSettings() {
     accentColor, 
     setAccentColor,
     wallpaperUrl,
-    setWallpaperUrl 
+    setWallpaperUrl,
+    reloadSettings,
   } = useTheme();
+  const { isSuperAdmin, updateUserPreferences } = useAuth();
+  const canManageWallpaper = allowWallpaper && isSuperAdmin;
   
   const [customColor, setCustomColor] = useState(accentColor);
   const [uploading, setUploading] = useState(false);
@@ -43,9 +48,11 @@ export function PersonalizationSettings() {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const response = await settingsAPI.getAppSettings();
+      const response = await usersAPI.getPreferences();
       if (response.data) {
-        // Load accent color from server
+        if (response.data.theme) {
+          setTheme(response.data.theme);
+        }
         if (response.data.accentColor) {
           setAccentColor(response.data.accentColor);
           setCustomColor(response.data.accentColor);
@@ -53,7 +60,6 @@ export function PersonalizationSettings() {
         if (typeof response.data.glassMode === 'boolean') {
           setGlassMode(response.data.glassMode);
         }
-        // Load wallpaper from server
         if (response.data.wallpaperFileId) {
           setWallpaperFileId(response.data.wallpaperFileId);
           setWallpaperUrl(filesAPI.getUrl(response.data.wallpaperFileId));
@@ -67,7 +73,7 @@ export function PersonalizationSettings() {
     } finally {
       setLoading(false);
     }
-  }, [setAccentColor, setGlassMode, setWallpaperUrl]);
+  }, [setAccentColor, setGlassMode, setTheme, setWallpaperUrl]);
 
   useEffect(() => {
     fetchSettings();
@@ -87,11 +93,15 @@ export function PersonalizationSettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await settingsAPI.updateAppSettings({ 
+      await updateUserPreferences({
         accentColor,
-        wallpaperFileId,
-        glassMode
+        glassMode,
+        theme,
       });
+      if (canManageWallpaper) {
+        await settingsAPI.updateAppSettings({ wallpaperFileId });
+        await reloadSettings?.();
+      }
       toast.success('Personalization settings saved');
     } catch (error) {
       toast.error('Failed to save settings');
@@ -246,7 +256,7 @@ export function PersonalizationSettings() {
           </div>
 
           {/* Wallpaper Upload */}
-          {glassMode && (
+          {canManageWallpaper && glassMode && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}

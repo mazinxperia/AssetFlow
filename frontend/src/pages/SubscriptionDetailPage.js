@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft, Edit, Trash2, CreditCard, Eye, EyeOff,
   Globe, ExternalLink, Users, Calendar,
-  DollarSign, AlertTriangle, CheckCircle2, Lock, Loader2
+  DollarSign, AlertTriangle, CheckCircle2, Lock, Loader2, RotateCw
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { LoadingPage } from '../components/common/LoadingSpinner';
@@ -40,17 +40,6 @@ function formatCurrency(amount, currency) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
-function isExpired(dateStr) {
-  if (!dateStr) return false;
-  return new Date(dateStr) < new Date();
-}
-
-function isExpiringSoon(dateStr) {
-  if (!dateStr) return false;
-  const diff = (new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24);
-  return diff >= 0 && diff <= 30;
 }
 
 function daysUntil(dateStr) {
@@ -325,18 +314,29 @@ export default function SubscriptionDetailPage() {
     } catch { toast.error('Failed to delete'); }
   };
 
+  const handleRenew = async () => {
+    try {
+      const response = await subscriptionsAPI.renew(id);
+      setSub(response.data);
+      toast.success('Subscription renewed');
+    } catch {
+      toast.error('Failed to renew subscription');
+    }
+  };
+
   if (loading) return <LoadingPage />;
   if (!sub) return null;
 
   const assignedIds = sub.assignedEmployeeIds || (sub.assignedEmployeeId ? [sub.assignedEmployeeId] : []);
   const assignedEmployees = employees.filter(e => assignedIds.includes(e.id));
-  const expired = isExpired(sub.renewalDate);
-  const expiring = isExpiringSoon(sub.renewalDate);
-  const days = daysUntil(sub.renewalDate);
+  const expired = sub.renewalStatus === 'expired';
+  const expiring = sub.renewalStatus === 'expiring_soon';
+  const autoRenewing = sub.renewalStatus === 'auto_renewing';
+  const days = sub.daysUntilRenewal ?? daysUntil(sub.renewalDate);
 
   const statusColor = expired ? 'text-destructive' : expiring ? 'text-amber-500' : 'text-green-500';
-  const statusLabel = expired ? 'Expired' : expiring ? 'Expiring Soon' : 'Active';
-  const StatusIcon = expired ? AlertTriangle : expiring ? AlertTriangle : CheckCircle2;
+  const statusLabel = sub.renewalStatusLabel || (autoRenewing ? 'Auto-renewing' : 'Active');
+  const StatusIcon = expired || expiring ? AlertTriangle : CheckCircle2;
 
   return (
     <div>
@@ -362,6 +362,11 @@ export default function SubscriptionDetailPage() {
             </Button>
             {!isReadOnly && (
               <>
+                {sub.needsManualRenewal && (
+                  <Button variant="outline" onClick={handleRenew}>
+                    <RotateCw className="w-4 h-4 mr-2" />Mark Renewed
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setEditOpen(true)}>
                   <Edit className="w-4 h-4 mr-2" />Edit
                 </Button>
@@ -496,7 +501,13 @@ export default function SubscriptionDetailPage() {
                 </div>
                 {days !== null && (
                   <p className="text-xs text-muted-foreground">
-                    {days < 0 ? `Expired ${Math.abs(days)} days ago` : days === 0 ? 'Expires today' : `${days} days remaining`}
+                    {autoRenewing
+                      ? (days === 0 ? 'Auto-renews today' : `Auto-renews in ${days} day${days === 1 ? '' : 's'}`)
+                      : days < 0
+                        ? `Renewal overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}`
+                        : days === 0
+                          ? 'Renewal is due today'
+                          : `${days} day${days === 1 ? '' : 's'} remaining`}
                   </p>
                 )}
               </CardContent>
@@ -549,11 +560,29 @@ export default function SubscriptionDetailPage() {
                   </p>
                 </div>
                 <div>
+                  <p className="text-sm text-muted-foreground mb-1">Renewal Status</p>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      autoRenewing && "border-green-500/30 text-green-600 bg-green-500/10",
+                      expiring && "border-amber-500/30 text-amber-600 bg-amber-500/10",
+                      expired && "border-destructive/30 text-destructive bg-destructive/10"
+                    )}
+                  >
+                    {statusLabel}
+                  </Badge>
+                </div>
+                <div>
                   <p className="text-sm text-muted-foreground mb-1">Auto Pay</p>
                   <Badge variant={sub.autopay === 'auto' ? 'default' : 'secondary'}>
                     {sub.autopay === 'auto' ? 'Enabled' : 'Disabled'}
                   </Badge>
                 </div>
+                {sub.needsManualRenewal && !isReadOnly && (
+                  <Button className="w-full" onClick={handleRenew}>
+                    <RotateCw className="w-4 h-4 mr-2" />Mark Renewed
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </motion.div>

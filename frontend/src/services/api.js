@@ -53,6 +53,8 @@ export const authAPI = {
 export const usersAPI = {
   getAll: () => api.get('/api/users'),
   getById: (id) => api.get(`/api/users/${id}`),
+  getPreferences: () => api.get('/api/users/me/preferences'),
+  updatePreferences: (data) => api.put('/api/users/me/preferences', data),
   create: (data) => api.post('/api/users', data),
   update: (id, data) => api.put(`/api/users/${id}`, data),
   delete: (id) => api.delete(`/api/users/${id}`),
@@ -96,8 +98,11 @@ export const assetsAPI = {
   create: (data) => api.post('/api/assets', data),
   update: (id, data) => api.put(`/api/assets/${id}`, data),
   delete: (id) => api.delete(`/api/assets/${id}`),
+  dispose: (id, data = {}) => api.post(`/api/assets/${id}/dispose`, data),
+  restore: (id) => api.post(`/api/assets/${id}/restore`),
   duplicate: (id) => api.post(`/api/assets/${id}/duplicate`),
   getInventory: () => api.get('/api/assets', { params: { inventoryOnly: true } }),
+  getDisposed: () => api.get('/api/assets', { params: { disposedOnly: true } }),
   uploadImage: (formData) => api.post('/api/assets/upload-image', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -210,6 +215,7 @@ export const subscriptionsAPI = {
   getById: (id) => api.get(`/api/subscriptions/${id}`),
   create: (data) => api.post('/api/subscriptions', data),
   update: (id, data) => api.put(`/api/subscriptions/${id}`, data),
+  renew: (id) => api.post(`/api/subscriptions/${id}/renew`),
   delete: (id) => api.delete(`/api/subscriptions/${id}`),
   fetchLogo: (url) => api.post('/api/subscriptions/fetch-logo', { url }),
 };

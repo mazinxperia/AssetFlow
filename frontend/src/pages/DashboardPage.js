@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Users, Package, Boxes, ArrowLeftRight, CarFront,
+  Users, Package, Boxes, ArchiveX, ArrowLeftRight, CarFront,
   TrendingUp, Activity, ChevronRight, ChevronUp,
   CreditCard, HardDrive, AlertTriangle,
   Globe, Lock, ShieldAlert, ChevronLeft
@@ -446,17 +446,12 @@ function formatCurrency(amount, currency) {
   catch { return `${currency || 'USD'} ${amount}`; }
 }
 
-function isExpired(d) { return d && new Date(d) < new Date(); }
 function SubscriptionsWidget({ subs, navigate, displayCurrency = 'USD', exchangeRate = 1, showCosts = true, expiryWarningDays = 30 }) {
   const [hovered, setHovered] = useState(null);
 
-  const active = subs.filter(s => !s.renewalDate || !isExpired(s.renewalDate));
-  const expired = subs.filter(s => s.renewalDate && isExpired(s.renewalDate));
-  const expiringSoon = subs.filter(s => {
-    if (!s.renewalDate) return false;
-    const diff = (new Date(s.renewalDate) - new Date()) / (1000 * 60 * 60 * 24);
-    return diff >= 0 && diff <= expiryWarningDays;
-  });
+  const active = subs.filter(s => s.renewalStatus !== 'expired');
+  const expired = subs.filter(s => s.renewalStatus === 'expired');
+  const expiringSoon = subs.filter(s => s.renewalStatus === 'expiring_soon');
 
   // Convert sub price to displayCurrency without double-converting.
   // exchangeRate = 1 USD -> displayCurrency (e.g. 3.67 for AED).
@@ -593,7 +588,7 @@ function SubscriptionsWidget({ subs, navigate, displayCurrency = 'USD', exchange
           {expiringSoon.length > 0 && (
             <div>
               <div className="text-xs text-amber-500 font-medium mb-2 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Expiring within 30 days
+                <AlertTriangle className="w-3 h-3" /> Manual renewals within {expiryWarningDays} day{expiryWarningDays === 1 ? '' : 's'}
               </div>
               {expiringSoon.slice(0, 3).map((s, i) => (
                 <motion.div key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.1 }}
@@ -978,7 +973,7 @@ export default function DashboardPage() {
         setDisplayCurrency(chosenCurrency);
         setShowSubscriptionCosts(appSettings.showSubscriptionCosts !== false);
         setShowDbStorage(appSettings.showDbStorage !== false);
-        setExpiryWarningDays(appSettings.expiryWarningDays || 30);
+        setExpiryWarningDays(appSettings.subscriptionWarningDays || 7);
         setRefreshInterval(appSettings.refreshInterval || 0);
         setWelcomeMessage(appSettings.welcomeMessage || '');
 
@@ -1036,11 +1031,12 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard title="Total Employees" value={stats?.totalEmployees || 0} icon={Users} color="#3b82f6" delay={0} onClick={() => navigate('/employees')} />
         <StatCard title="Total Assets" value={stats?.totalAssets || 0} icon={Package} color="#f43f5e" delay={0.06} onClick={() => navigate('/assets')} />
         <StatCard title="Assigned" value={stats?.assignedAssets || 0} icon={ArrowLeftRight} color="#10b981" delay={0.12} onClick={() => navigate('/assets')} subtitle={`${assignedPct}% of total`} />
         <StatCard title="In Inventory" value={stats?.inventoryAssets || 0} icon={Boxes} color="#f59e0b" delay={0.18} onClick={() => navigate('/inventory')} />
+        <StatCard title="Disposed" value={stats?.disposedAssets || 0} icon={ArchiveX} color="#64748b" delay={0.22} onClick={() => navigate('/disposed-assets')} />
       </div>
 
       {/* Asset Type Cards - scrollable */}

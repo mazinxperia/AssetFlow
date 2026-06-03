@@ -20,15 +20,17 @@ import EmployeesPage from './pages/EmployeesPage';
 import EmployeeFormPage from './pages/EmployeeFormPage';
 import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import InventoryPage from './pages/InventoryPage';
+import DisposedAssetsPage from './pages/DisposedAssetsPage';
 import VehicleFleetPage from './pages/VehicleFleetPage';
 import TransfersPage from './pages/TransfersPage';
 import SubscriptionsPage from './pages/SubscriptionsPage';
 import SubscriptionDetailPage from './pages/SubscriptionDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import PersonalizationPage from './pages/PersonalizationPage';
 
 // Protected Route Component
-function ProtectedRoute({ children, requireAdmin = false }) {
-  const { isAuthenticated, loading, isSuperAdmin } = useAuth();
+function ProtectedRoute({ children, requireAdmin = false, requireWrite = false }) {
+  const { isAuthenticated, loading, isSuperAdmin, canWrite } = useAuth();
 
   if (loading) {
     return <LoadingPage />;
@@ -39,6 +41,10 @@ function ProtectedRoute({ children, requireAdmin = false }) {
   }
 
   if (requireAdmin && !isSuperAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireWrite && !canWrite) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -83,18 +89,19 @@ function AppRoutes() {
         
         {/* Assets */}
         <Route path="/assets" element={<AssetsPage />} />
-        <Route path="/assets/new" element={<AssetFormPage />} />
+        <Route path="/assets/new" element={<ProtectedRoute requireWrite><AssetFormPage /></ProtectedRoute>} />
         <Route path="/assets/:id" element={<AssetDetailPage />} />
-        <Route path="/assets/:id/edit" element={<AssetFormPage />} />
+        <Route path="/assets/:id/edit" element={<ProtectedRoute requireWrite><AssetFormPage /></ProtectedRoute>} />
         
         {/* Employees */}
         <Route path="/employees" element={<EmployeesPage />} />
-        <Route path="/employees/new" element={<EmployeeFormPage />} />
+        <Route path="/employees/new" element={<ProtectedRoute requireWrite><EmployeeFormPage /></ProtectedRoute>} />
         <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-        <Route path="/employees/:id/edit" element={<EmployeeFormPage />} />
+        <Route path="/employees/:id/edit" element={<ProtectedRoute requireWrite><EmployeeFormPage /></ProtectedRoute>} />
         
         {/* Inventory */}
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/disposed-assets" element={<DisposedAssetsPage />} />
 
         {/* Vehicle Fleet */}
         <Route path="/vehicles" element={<VehicleFleetPage />} />
@@ -105,6 +112,8 @@ function AppRoutes() {
         {/* Subscriptions */}
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
         <Route path="/subscriptions/:id" element={<SubscriptionDetailPage />} />
+
+        <Route path="/personalization" element={<PersonalizationPage />} />
 
         {/* Settings - Admin Only */}
         <Route path="/settings" element={
@@ -124,15 +133,15 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <ThemeProvider>
-        <BrandingProvider>
-          <AuthProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <BrandingProvider>
             <AppRoutes />
             <GlobalMusicPlayer />
             <Toaster position="top-right" richColors />
-          </AuthProvider>
-        </BrandingProvider>
-      </ThemeProvider>
+          </BrandingProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

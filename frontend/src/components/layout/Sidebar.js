@@ -6,10 +6,11 @@ import {
   Package, 
   Users, 
   Boxes, 
+  ArchiveX,
   CarFront,
   ArrowLeftRight,
   Wallet, 
-  // CreditCard used for subscriptions - see below
+  Palette,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -27,14 +28,13 @@ const baseNavItems = [
   { path: '/assets', label: 'Assets', icon: Package },
   { path: '/employees', label: 'Employees', icon: Users },
   { path: '/inventory', label: 'Inventory', icon: Boxes },
+  { path: '/disposed-assets', label: 'Disposed Assets', icon: ArchiveX },
 ];
 
-// Items only for ADMIN and SUPER_ADMIN
-const adminNavItems = [
+const transferNavItems = [
   { path: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
 ];
 
-// Subscriptions - visible to ADMIN and SUPER_ADMIN
 const subscriptionNavItems = [
   { path: '/subscriptions', label: 'Subscriptions', icon: Wallet },
 ];
@@ -49,10 +49,14 @@ const superAdminItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const personalizationItems = [
+  { path: '/personalization', label: 'Personalization', icon: Palette },
+];
+
 export function Sidebar({ onCollapse }) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-  const { logout, isSuperAdmin, user } = useAuth();
+  const { logout, isSuperAdmin } = useAuth();
   const { branding } = useBranding();
 
   const handleToggle = () => {
@@ -122,8 +126,7 @@ export function Sidebar({ onCollapse }) {
             />
           ))}
           
-          {/* Admin items - hidden for USER role */}
-          {user?.role !== 'USER' && adminNavItems.map((item) => (
+          {transferNavItems.map((item) => (
             <NavItem
               key={item.path}
               item={item}
@@ -132,19 +135,15 @@ export function Sidebar({ onCollapse }) {
             />
           ))}
 
-          {user?.role !== 'USER' && (
-            <>
-              <div className="my-2 mx-1 border-t border-border/60" />
-              {subscriptionNavItems.map((item) => (
-                <NavItem
-                  key={item.path}
-                  item={item}
-                  collapsed={collapsed}
-                  isActive={location.pathname.startsWith(item.path)}
-                />
-              ))}
-            </>
-          )}
+          <div className="my-2 mx-1 border-t border-border/60" />
+          {subscriptionNavItems.map((item) => (
+            <NavItem
+              key={item.path}
+              item={item}
+              collapsed={collapsed}
+              isActive={location.pathname.startsWith(item.path)}
+            />
+          ))}
 
           <div className="my-2 mx-1 border-t border-border/60" />
           {vehicleNavItems.map((item) => (
@@ -159,9 +158,9 @@ export function Sidebar({ onCollapse }) {
 
         {/* Footer */}
         <div>
-          {isSuperAdmin && (
+          {(isSuperAdmin ? superAdminItems : personalizationItems).length > 0 && (
             <div className="p-3">
-              {superAdminItems.map((item) => (
+              {(isSuperAdmin ? superAdminItems : personalizationItems).map((item) => (
                 <NavItem
                   key={item.path}
                   item={item}

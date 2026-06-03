@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { settingsAPI, filesAPI } from '../services/api';
+import { settingsAPI, filesAPI, usersAPI } from '../services/api';
+import { useAuth } from './AuthContext';
 
 const ThemeContext = createContext(null);
 
@@ -12,6 +13,8 @@ const hexToRgb = (hex) => {
 };
 
 export function ThemeProvider({ children }) {
+  const { user, loading: authLoading, updateUser } = useAuth();
+  const userId = user?.id;
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('assetflow-theme');
@@ -45,37 +48,52 @@ export function ThemeProvider({ children }) {
 
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  // Load settings from database on mount
   const loadSettingsFromDB = useCallback(async () => {
+    if (authLoading) return;
+    if (!userId) {
+      setSettingsLoaded(true);
+      return;
+    }
+
     try {
-      const response = await settingsAPI.getAppSettings();
-      if (response.data) {
-        // Load accent color from database
-        if (response.data.accentColor) {
-          setAccentColor(response.data.accentColor);
-          localStorage.setItem('assetflow-accent-color', response.data.accentColor);
-        }
-        if (typeof response.data.glassMode === 'boolean') {
-          setGlassMode(response.data.glassMode);
-          localStorage.setItem('assetflow-glass-mode', String(response.data.glassMode));
-        }
-        // Load wallpaper from database
-        if (response.data.wallpaperFileId) {
-          const url = filesAPI.getUrl(response.data.wallpaperFileId);
-          setWallpaperUrl(url);
-          localStorage.setItem('assetflow-wallpaper-url', url);
-        } else {
-          setWallpaperUrl('');
-          localStorage.removeItem('assetflow-wallpaper-url');
-        }
+      setSettingsLoaded(false);
+      const [settingsResponse, preferencesResponse] = await Promise.all([
+        settingsAPI.getAppSettings(),
+        usersAPI.getPreferences(),
+      ]);
+
+      const appSettings = settingsResponse.data || {};
+      const preferences = preferencesResponse.data || {};
+
+      if (preferences.theme) {
+        setTheme(preferences.theme);
       }
+      if (typeof preferences.glassMode === 'boolean') {
+        setGlassMode(preferences.glassMode);
+      } else if (typeof appSettings.glassMode === 'boolean') {
+        setGlassMode(appSettings.glassMode);
+      }
+      if (preferences.accentColor) {
+        setAccentColor(preferences.accentColor);
+      } else if (appSettings.accentColor) {
+        setAccentColor(appSettings.accentColor);
+      }
+
+      if (appSettings.wallpaperFileId) {
+        const url = filesAPI.getUrl(appSettings.wallpaperFileId);
+        setWallpaperUrl(url);
+        localStorage.setItem('assetflow-wallpaper-url', url);
+      } else {
+        setWallpaperUrl('');
+        localStorage.removeItem('assetflow-wallpaper-url');
+      }
+      updateUser?.({ preferences });
     } catch (error) {
-      // Silent fail - use localStorage values
       console.log('Failed to load theme settings from DB');
     } finally {
       setSettingsLoaded(true);
     }
-  }, []);
+  }, [authLoading, updateUser, userId]);
 
   useEffect(() => {
     loadSettingsFromDB();

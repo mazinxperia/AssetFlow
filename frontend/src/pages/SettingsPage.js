@@ -6,6 +6,7 @@ import {
   Users,
   UserCog,
   Palette,
+  CreditCard,
   Building2,
   Plug,
   Mail,
@@ -40,6 +41,7 @@ import { DateTimeSettings } from '../components/settings/DateTimeSettings';
 import { BackupRestoreSettings } from '../components/settings/BackupRestoreSettings';
 import { AppMusicSettings } from '../components/settings/AppMusicSettings';
 import { VehicleFieldsSettings } from '../components/settings/VehicleFieldsSettings';
+import { SubscriptionSettings } from '../components/settings/SubscriptionSettings';
 import { cn } from '../lib/utils';
 
 // Settings tree structure
@@ -65,6 +67,12 @@ const settingsTree = [
     id: 'app-music',
     label: 'App Music',
     icon: Music,
+    children: null
+  },
+  {
+    id: 'subscription-settings',
+    label: 'Subscription Settings',
+    icon: CreditCard,
     children: null
   },
   {
@@ -249,6 +257,8 @@ export default function SettingsPage() {
         return <PersonalizationSettings />;
       case 'app-music':
         return <AppMusicSettings />;
+      case 'subscription-settings':
+        return <SubscriptionSettings />;
       case 'branding':
         return <BrandingSettings />;
       case 'smtp':

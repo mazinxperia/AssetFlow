@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion';
 import { Pause, Play, SkipForward } from 'lucide-react';
 import { musicAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 
 const LEGACY_PAUSED_KEY = 'assetflow-music-paused';
@@ -115,6 +116,7 @@ function WaveCanvas({ active, expanded }) {
 }
 
 export function GlobalMusicPlayer() {
+  const { user, updateUserPreferences } = useAuth();
   const audioRef = useRef(null);
   const [enabled, setEnabled] = useState(false);
   const [tracks, setTracks] = useState([]);
@@ -131,6 +133,13 @@ export function GlobalMusicPlayer() {
   const streamUrl = useMemo(() => {
     return currentTrack ? musicAPI.getStreamUrl(currentTrack.id) : '';
   }, [currentTrack]);
+
+  const savePlayState = useCallback((state) => {
+    localStorage.setItem(PLAY_STATE_KEY, state);
+    if (user) {
+      updateUserPreferences?.({ musicPlayState: state }).catch(() => {});
+    }
+  }, [updateUserPreferences, user]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -172,25 +181,25 @@ export function GlobalMusicPlayer() {
   }, []);
 
   const playUserRequested = useCallback(() => {
-    localStorage.setItem(PLAY_STATE_KEY, 'playing');
+    savePlayState('playing');
     setWantsPlaying(true);
     attemptPlay();
-  }, [attemptPlay]);
+  }, [attemptPlay, savePlayState]);
 
   const pauseUserRequested = useCallback(() => {
-    localStorage.setItem(PLAY_STATE_KEY, 'paused');
+    savePlayState('paused');
     setWantsPlaying(false);
     setAutoplayBlocked(false);
     pauseAudio();
-  }, [pauseAudio]);
+  }, [pauseAudio, savePlayState]);
 
   const selectNextTrack = useCallback(() => {
     const nextTrack = getRandomTrack(tracks, currentTrack?.id);
     if (!nextTrack) return;
-    localStorage.setItem(PLAY_STATE_KEY, 'playing');
+    savePlayState('playing');
     setWantsPlaying(true);
     setCurrentTrack(nextTrack);
-  }, [currentTrack, tracks]);
+  }, [currentTrack, savePlayState, tracks]);
 
   useEffect(() => {
     localStorage.removeItem(LEGACY_PAUSED_KEY);
@@ -202,6 +211,18 @@ export function GlobalMusicPlayer() {
       window.removeEventListener('focus', loadConfig);
     };
   }, [loadConfig]);
+
+  useEffect(() => {
+    const serverState = user?.preferences?.musicPlayState;
+    if (serverState === 'playing' || serverState === 'paused') {
+      localStorage.setItem(PLAY_STATE_KEY, serverState);
+      setWantsPlaying(serverState === 'playing');
+      if (serverState === 'paused') {
+        setAutoplayBlocked(false);
+        pauseAudio();
+      }
+    }
+  }, [pauseAudio, user?.id, user?.preferences?.musicPlayState]);
 
   useEffect(() => {
     if (!canShow) {
