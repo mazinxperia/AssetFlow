@@ -703,15 +703,177 @@ async def monday_api_call(api_token: str, query: str, variables: dict = None):
                         await asyncio.sleep(wait_time)
                         continue
             
-            # Add small delay between all API calls to avoid rate limits
-            await asyncio.sleep(0.5)
+            # Add a small delay between calls to stay gentle with Monday rate limits.
+            await asyncio.sleep(0.15)
             return result
     
     return result
 
-async def create_monday_board_structure(monday_settings: dict):
-    """Safe board structure setup - only creates what's missing, never wipes data. Adds colors."""
+MONDAY_EMPLOYEE_GROUP_TITLE = "Assets"
+MONDAY_EMPLOYEE_NAME_COLUMN = "Employee Name"
+MONDAY_ASSET_COUNT_COLUMN = "Number Of Assets"
+MONDAY_ROW_PARALLEL_LIMIT = 8
+MONDAY_ASSET_TYPE_ORDER = {
+    "laptop": 0,
+    "mobile": 1,
+    "mobile phone": 1,
+    "phone": 1,
+    "monitor": 2,
+    "mouse": 3,
+    "keyboard": 4,
+    "cpu": 5,
+    "processor": 5,
+}
+
+
+def _monday_asset_column_title(asset_type_name: str) -> str:
+    title = str(asset_type_name or "Unknown Asset Type").strip() or "Unknown Asset Type"
+    core_titles = {"name", MONDAY_EMPLOYEE_NAME_COLUMN, MONDAY_ASSET_COUNT_COLUMN}
+    if title.lower() in {t.lower() for t in core_titles}:
+        return f"{title} Assets"
+    return title
+
+
+def _build_monday_asset_column_titles(asset_types: list) -> dict:
+    titles_by_type_id = {}
+    used_titles = {MONDAY_EMPLOYEE_NAME_COLUMN.lower(), MONDAY_ASSET_COUNT_COLUMN.lower(), "name"}
+
+    def sort_key(asset_type):
+        name = str(asset_type.get("name", "")).strip().lower()
+        return (MONDAY_ASSET_TYPE_ORDER.get(name, 100), str(asset_type.get("createdAt", "")), name)
+
+    for asset_type in sorted(asset_types, key=sort_key):
+        type_id = str(asset_type.get("_id", ""))
+        base_title = _monday_asset_column_title(asset_type.get("name", "Unknown Asset Type"))
+        title = base_title
+        suffix = 2
+        while title.lower() in used_titles:
+            title = f"{base_title} {suffix}"
+            suffix += 1
+        used_titles.add(title.lower())
+        titles_by_type_id[type_id] = title
+
+    return titles_by_type_id
+
+
+def _monday_asset_model_number(asset: dict, asset_type: Optional[dict]) -> str:
+    field_values = asset.get("fieldValues") or {}
+    fields = asset_type.get("fields", []) if asset_type else []
+
+    for field in fields:
+        if field.get("name") == "Model Number":
+            value = field_values.get(field.get("id"))
+            if value not in (None, ""):
+                return str(value).strip()
+
+    for field in fields:
+        if "model" in str(field.get("name", "")).lower():
+            value = field_values.get(field.get("id"))
+            if value not in (None, ""):
+                return str(value).strip()
+
+    return "No model number"
+
+
+async def _ensure_monday_employee_asset_matrix(api_token: str, board_id: str, asset_types: list):
     import asyncio
+    import json as json_lib
+
+    query = f'query {{ boards(ids: {board_id}) {{ groups {{ id title }} columns {{ id title type }} }} }}'
+    result = await monday_api_call(api_token, query)
+    if "errors" in result:
+        return {"success": False, "message": result["errors"][0].get("message", "API error")}
+
+    boards = result.get("data", {}).get("boards", [])
+    if not boards:
+        return {"success": False, "message": "Board not found or access denied"}
+
+    board_data = boards[0]
+    existing_groups = {g["title"]: g["id"] for g in board_data.get("groups", [])}
+    existing_columns = {c["title"]: c for c in board_data.get("columns", [])}
+
+    if MONDAY_EMPLOYEE_GROUP_TITLE not in existing_groups:
+        group_result = await monday_api_call(
+            api_token,
+            f'mutation {{ create_group(board_id: {board_id}, group_name: {json_lib.dumps(MONDAY_EMPLOYEE_GROUP_TITLE)}) {{ id }} }}'
+        )
+        if "errors" in group_result:
+            return {"success": False, "message": group_result["errors"][0].get("message", "Failed to create group")}
+        group_id = group_result.get("data", {}).get("create_group", {}).get("id")
+    else:
+        group_id = existing_groups[MONDAY_EMPLOYEE_GROUP_TITLE]
+
+    if group_id:
+        await monday_api_call(
+            api_token,
+            f'mutation {{ update_group(board_id: {board_id}, group_id: {json_lib.dumps(group_id)}, group_attribute: color, new_value: "dark-blue") {{ id }} }}'
+        )
+
+    asset_column_titles = _build_monday_asset_column_titles(asset_types)
+    asset_titles_in_order = list(asset_column_titles.values())
+    desired_columns = [
+        (MONDAY_EMPLOYEE_NAME_COLUMN, "text"),
+        (MONDAY_ASSET_COUNT_COLUMN, "numbers"),
+        *[(title, "text") for title in asset_titles_in_order],
+    ]
+
+    existing_asset_titles = [c["title"] for c in board_data.get("columns", []) if c["title"] in set(asset_titles_in_order)]
+    if existing_asset_titles and existing_asset_titles != asset_titles_in_order:
+        for col in board_data.get("columns", []):
+            if col["title"] in set(asset_titles_in_order):
+                delete_result = await monday_api_call(
+                    api_token,
+                    f'mutation {{ delete_column(board_id: {board_id}, column_id: {json_lib.dumps(col["id"])}) {{ id }} }}'
+                )
+                if "errors" in delete_result:
+                    return {
+                        "success": False,
+                        "message": delete_result["errors"][0].get("message", f"Failed to reorder {col['title']} column")
+                    }
+                await asyncio.sleep(0.1)
+
+        refresh_existing = await monday_api_call(api_token, query)
+        if "errors" in refresh_existing:
+            return {"success": False, "message": refresh_existing["errors"][0].get("message", "Failed to refresh columns")}
+        board_data = refresh_existing.get("data", {}).get("boards", [{}])[0]
+        existing_columns = {c["title"]: c for c in board_data.get("columns", [])}
+
+    created_columns = []
+    previous_column_id = next((c.get("id") for c in board_data.get("columns", []) if c.get("id") == "name"), None)
+    for title, column_type in desired_columns:
+        if title not in existing_columns:
+            after_part = f', after_column_id: {json_lib.dumps(previous_column_id)}' if previous_column_id else ""
+            create_result = await monday_api_call(
+                api_token,
+                f'mutation {{ create_column(board_id: {board_id}, title: {json_lib.dumps(title)}, column_type: {column_type}{after_part}) {{ id title type }} }}'
+            )
+            if "errors" in create_result:
+                return {"success": False, "message": create_result["errors"][0].get("message", f"Failed to create {title} column")}
+            created_columns.append(title)
+            created_column = create_result.get("data", {}).get("create_column", {})
+            previous_column_id = created_column.get("id") or previous_column_id
+            await asyncio.sleep(0.1)
+        else:
+            previous_column_id = existing_columns[title].get("id") or previous_column_id
+
+    refresh_result = await monday_api_call(api_token, f'query {{ boards(ids: {board_id}) {{ columns {{ id title type }} }} }}')
+    if "errors" in refresh_result:
+        return {"success": False, "message": refresh_result["errors"][0].get("message", "Failed to refresh columns")}
+
+    fresh_columns = refresh_result.get("data", {}).get("boards", [{}])[0].get("columns", [])
+    columns_by_title = {c["title"]: c["id"] for c in fresh_columns}
+
+    return {
+        "success": True,
+        "groupId": group_id,
+        "columns": columns_by_title,
+        "assetColumnTitles": asset_column_titles,
+        "createdColumns": created_columns,
+    }
+
+
+async def create_monday_board_structure(monday_settings: dict):
+    """Prepare Monday board as an employee-by-asset-type matrix."""
     api_token = monday_settings.get('apiToken')
     board_id = monday_settings.get('boardId')
     
@@ -719,60 +881,19 @@ async def create_monday_board_structure(monday_settings: dict):
         return {"success": False, "message": "API token or board ID not configured"}
     
     try:
-        # Get existing board state
-        query = f'query {{ boards(ids: {board_id}) {{ groups {{ id title }} columns {{ id title type }} }} }}'
-        result = await monday_api_call(api_token, query)
-        if "errors" in result:
-            return {"success": False, "message": result["errors"][0].get("message", "API error")}
-        
-        board_data = result.get("data", {}).get("boards", [{}])[0]
-        existing_groups = {g["title"]: g["id"] for g in board_data.get("groups", [])}
-        existing_columns = {c["title"]: c["id"] for c in board_data.get("columns", [])}
+        asset_types = await asset_types_collection.find({}).to_list(1000)
+        structure = await _ensure_monday_employee_asset_matrix(str(api_token), str(board_id).strip(), asset_types)
+        if not structure.get("success"):
+            return structure
 
-        # Create "Total" group if missing
-        newly_created = []
-        if "Total" not in existing_groups:
-            r = await monday_api_call(api_token, f'mutation {{ create_group(board_id: {board_id}, group_name: "Total") {{ id }} }}')
-            total_group_id = r.get("data", {}).get("create_group", {}).get("id")
-            newly_created.append(total_group_id)
-        else:
-            total_group_id = existing_groups["Total"]
-
-        # Create "Assets" group if missing
-        if "Assets" not in existing_groups:
-            r = await monday_api_call(api_token, f'mutation {{ create_group(board_id: {board_id}, group_name: "Assets") {{ id }} }}')
-            assets_group_id = r.get("data", {}).get("create_group", {}).get("id")
-            newly_created.append(assets_group_id)
-        else:
-            assets_group_id = existing_groups["Assets"]
-
-        # Always set colors on every sync (works for both new and existing groups)
-        await asyncio.sleep(1)
-        if total_group_id:
-            await monday_api_call(api_token, f'mutation {{ update_group(board_id: {board_id}, group_id: "{total_group_id}", group_attribute: color, new_value: "dark-orange") {{ id }} }}')
-        if assets_group_id:
-            await monday_api_call(api_token, f'mutation {{ update_group(board_id: {board_id}, group_id: "{assets_group_id}", group_attribute: color, new_value: "dark-blue") {{ id }} }}')
-
-        # Create required columns if missing
-        if "Employee Name" not in existing_columns:
-            await monday_api_call(api_token, f'mutation {{ create_column(board_id: {board_id}, title: "Employee Name", column_type: text) {{ id }} }}')
-        if "Number Of Assets" not in existing_columns:
-            await monday_api_call(api_token, f'mutation {{ create_column(board_id: {board_id}, title: "Number Of Assets", column_type: numbers) {{ id }} }}')
-
-        # Delete or hide columns we don't need
-        await asyncio.sleep(0.3)
-        fresh_result = await monday_api_call(api_token, f'query {{ boards(ids: {board_id}) {{ columns {{ id title }} }} }}')
-        fresh_cols = fresh_result.get("data", {}).get("boards", [{}])[0].get("columns", [])
-        cols_to_keep = {"name", "Employee Name", "Number Of Assets", "subitems"}
-        for col in fresh_cols:
-            if col["title"] not in cols_to_keep:
-                del_result = await monday_api_call(api_token, f'mutation {{ delete_column(board_id: {board_id}, column_id: "{col["id"]}") {{ id }} }}')
-                if "errors" in del_result:
-                    await monday_api_call(api_token, f'''mutation {{
-                      change_column_metadata(board_id: {board_id}, column_id: "{col["id"]}", column_property: hidden, value: "true") {{ id }}
-                    }}''')
-
-        return {"success": True, "message": "Board structure ready", "groupId": assets_group_id}
+        created = structure.get("createdColumns", [])
+        suffix = f" ({len(created)} columns added)" if created else ""
+        return {
+            "success": True,
+            "message": f"Employee asset matrix ready{suffix}",
+            "groupId": structure.get("groupId"),
+            "createdColumns": created,
+        }
     
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -794,7 +915,7 @@ def get_asset_color(type_name: str) -> str:
 
 
 async def sync_to_monday(monday_settings: dict):
-    """Smart sync - only update what changed, batch everything"""
+    """Sync one Monday row per employee, with asset types as model-number columns."""
     import asyncio
     import json as json_lib
     try:
@@ -803,248 +924,166 @@ async def sync_to_monday(monday_settings: dict):
         if not api_token or not board_id:
             return {"success": False, "message": "Not configured"}
 
-        # Step 1: Get board structure in ONE call
-        result = await monday_api_call(api_token, f'query {{ boards(ids: {board_id}) {{ groups {{ id title }} columns {{ id title }} }} }}')
-        if "errors" in result:
-            return {"success": False, "message": result["errors"][0].get("message", "API error")}
-        board_data = result.get("data", {}).get("boards", [{}])[0]
-        groups = {g["title"]: g["id"] for g in board_data.get("groups", [])}
-        columns = {c["title"]: c["id"] for c in board_data.get("columns", [])}
-        if "Assets" not in groups:
-            return {"success": False, "message": "Board structure not found. Click Create Board Structure first."}
-        assets_group_id = groups["Assets"]
-        emp_name_col = columns.get("Employee Name")
-        num_assets_col = columns.get("Number Of Assets")
-
-        # Step 2: Batch fetch ALL DB data at once
-        employees = await employees_collection.find({}).to_list(1000)
-        all_assets = await assets_collection.find({}).to_list(1000)
-        all_asset_types = await asset_types_collection.find({}).to_list(100)
+        employees = await employees_collection.find({}).to_list(10000)
+        all_asset_types = await asset_types_collection.find({}).to_list(1000)
         asset_types_map = {str(at["_id"]): at for at in all_asset_types}
+
+        structure = await _ensure_monday_employee_asset_matrix(str(api_token), str(board_id).strip(), all_asset_types)
+        if not structure.get("success"):
+            return structure
+
+        assets_group_id = structure["groupId"]
+        columns = structure["columns"]
+        asset_column_titles = structure["assetColumnTitles"]
+        emp_name_col = columns.get(MONDAY_EMPLOYEE_NAME_COLUMN)
+        num_assets_col = columns.get(MONDAY_ASSET_COUNT_COLUMN)
+        if not emp_name_col or not num_assets_col:
+            return {"success": False, "message": "Monday board is missing required employee columns"}
+
+        asset_column_ids = {
+            type_id: columns.get(title)
+            for type_id, title in asset_column_titles.items()
+            if columns.get(title)
+        }
+
+        all_assets = await assets_collection.find(active_asset_query({
+            "assignedEmployeeId": {"$exists": True, "$nin": [None, ""]}
+        })).to_list(10000)
+
         assets_by_employee = {}
         for a in all_assets:
             eid = a.get("assignedEmployeeId")
             if eid:
                 assets_by_employee.setdefault(eid, []).append(a)
 
-        # Step 3: Get ALL existing Monday items with their column values + subitems in ONE call
         existing_result = await monday_api_call(api_token,
             f'''query {{
               boards(ids: {board_id}) {{
-                items_page(limit: 500) {{
-                  items {{
-                    id name
-                    column_values {{ id text }}
-                    subitems {{
+                groups(ids: [{json_lib.dumps(assets_group_id)}]) {{
+                  items_page(limit: 500) {{
+                    items {{
                       id name
                       column_values {{ id text }}
+                      subitems {{ id }}
                     }}
                   }}
                 }}
               }}
             }}''')
-        existing_items = existing_result.get("data", {}).get("boards", [{}])[0].get("items_page", {}).get("items", [])
-        # Map: employee_id -> {id, name, emp_name, num_assets, subitems: [{id, name, type, model}]}
+        if "errors" in existing_result:
+            return {"success": False, "message": existing_result["errors"][0].get("message", "Failed to read Monday items")}
+
+        board_groups = existing_result.get("data", {}).get("boards", [{}])[0].get("groups", [])
+        existing_items = board_groups[0].get("items_page", {}).get("items", []) if board_groups else []
         monday_map = {}
         for item in existing_items:
             col_map = {cv["id"]: cv["text"] for cv in item.get("column_values", [])}
-            subs = []
-            for sub in item.get("subitems", []):
-                sub_col_map = {cv["id"]: cv["text"] for cv in sub.get("column_values", [])}
-                subs.append({"id": sub["id"], "name": sub["name"], "col_map": sub_col_map})
             monday_map[item["name"]] = {
                 "id": item["id"],
                 "col_map": col_map,
-                "subitems": subs
+                "subitems": item.get("subitems", [])
             }
 
-        # Step 4: Get subitem board + columns (needed to update subitem columns)
-        subitem_board_id = None
-        subitem_columns = {}
+        def build_employee_column_values(emp, emp_assets):
+            grouped_models = {type_id: [] for type_id in asset_column_ids.keys()}
+            for asset in emp_assets:
+                type_id = str(asset.get("assetTypeId", ""))
+                if type_id not in grouped_models:
+                    continue
+                asset_type = asset_types_map.get(type_id)
+                grouped_models[type_id].append(_monday_asset_model_number(asset, asset_type))
 
-        our_emp_ids = set()
-        synced_count = 0
-        created_count = 0
-        updated_count = 0
-        skipped_count = 0
-        errors = []
+            col_values = {
+                emp_name_col: emp.get("name", "Unknown"),
+                num_assets_col: len(emp_assets),
+            }
 
-        print(f"Smart syncing {len(employees)} employees...")
+            for type_id, col_id in asset_column_ids.items():
+                models = sorted(grouped_models.get(type_id, []), key=lambda value: value.lower())
+                col_values[col_id] = "\n".join(models)
 
-        for emp in employees:
+            return col_values
+
+        def monday_row_matches(existing_col_map, expected_values):
+            for col_id, expected in expected_values.items():
+                existing = existing_col_map.get(col_id, "")
+                if str(existing or "") != str(expected or ""):
+                    return False
+            return True
+
+        async def process_employee(emp):
             try:
                 emp_id = str(emp["_id"])
-                emp_name = emp.get('name', 'Unknown')
-                emp_employee_id = emp.get('employeeId', 'N/A')
+                emp_employee_id = str(emp.get("employeeId") or emp_id)
                 emp_assets = assets_by_employee.get(emp_id, [])
-                if not emp_assets:
-                    continue
-                our_emp_ids.add(emp_employee_id)
-
-                # Build expected asset data
-                def get_asset_data(asset):
-                    at = asset_types_map.get(asset.get("assetTypeId", ""))
-                    type_name = at.get("name", "Unknown") if at else "Unknown"
-                    model = ""
-                    if asset.get("fieldValues") and at and at.get("fields"):
-                        for fd in at.get("fields", []):
-                            if fd.get("name") in ["Model", "Model Number"] or "model" in fd.get("name","").lower():
-                                model = str(asset["fieldValues"].get(fd["id"], ""))
-                                break
-                    return type_name, model
-
-                num_assets = len(emp_assets)
+                col_values = build_employee_column_values(emp, emp_assets)
 
                 if emp_employee_id in monday_map:
-                    # Employee exists - check if main item needs update
                     monday_item = monday_map[emp_employee_id]
-                    parent_item_id = monday_item["id"]
-                    col_map = monday_item["col_map"]
+                    subitems_deleted = 0
+                    for subitem in monday_item.get("subitems", []):
+                        delete_result = await monday_api_call(api_token, f'mutation {{ delete_item(item_id: {subitem["id"]}) {{ id }} }}')
+                        if "errors" not in delete_result:
+                            subitems_deleted += 1
 
-                    current_name = col_map.get(emp_name_col, "") if emp_name_col else ""
-                    current_count = col_map.get(num_assets_col, "") if num_assets_col else ""
-
-                    if current_name != emp_name or str(current_count) != str(num_assets):
-                        col_values = {}
-                        if emp_name_col: col_values[emp_name_col] = emp_name
-                        if num_assets_col: col_values[num_assets_col] = num_assets
+                    if not monday_row_matches(monday_item["col_map"], col_values):
                         await monday_api_call(api_token, f'''mutation {{
-                          change_multiple_column_values(item_id: {parent_item_id}, board_id: {board_id}, column_values: {json_lib.dumps(json_lib.dumps(col_values))}) {{ id }}
+                          change_multiple_column_values(
+                            item_id: {monday_item["id"]},
+                            board_id: {board_id},
+                            column_values: {json_lib.dumps(json_lib.dumps(col_values))}
+                          ) {{ id }}
                         }}''')
-                        updated_count += 1
-                        print(f"Updated main item: {emp_employee_id}")
-                    else:
-                        skipped_count += 1
-
-                    # Smart subitem sync
-                    existing_subs = monday_item["subitems"]
-                    our_assets_data = [get_asset_data(a) for a in emp_assets]
-
-                    # Find subitem board_id from existing subs if we don't have it yet
-                    if not subitem_board_id and existing_subs:
-                        # Fetch subitem board id
-                        sub_info = await monday_api_call(api_token, f'query {{ items(ids: {existing_subs[0]["id"]}) {{ board {{ id columns {{ id title }} }} }} }}')
-                        sub_board = sub_info.get("data", {}).get("items", [{}])[0].get("board", {})
-                        subitem_board_id = sub_board.get("id")
-                        subitem_columns = {c["title"]: c["id"] for c in sub_board.get("columns", [])}
-
-                    # Build expected subitems set (type, model) 
-                    expected = {(t, m) for t, m in our_assets_data}
-                    # Build existing subitems set using Assets Type and Model Number column values
-                    assets_type_col_id = subitem_columns.get("Assets Type")
-                    model_col_id = subitem_columns.get("Model Number")
-                    existing_set = set()
-                    subs_to_delete = []
-                    for sub in existing_subs:
-                        t = sub["col_map"].get(assets_type_col_id, "") if assets_type_col_id else sub["name"]
-                        m = sub["col_map"].get(model_col_id, "") if model_col_id else ""
-                        key = (t, m)
-                        if key in expected and key not in existing_set:
-                            existing_set.add(key)
-                        else:
-                            subs_to_delete.append(sub["id"])
-
-                    # Delete subitems no longer needed
-                    for sid in subs_to_delete:
-                        await monday_api_call(api_token, f'mutation {{ delete_item(item_id: {sid}) {{ id }} }}')
-
-                    # Create missing subitems
-                    missing = expected - existing_set
-                    counter = len(existing_subs) - len(subs_to_delete) + 1
-                    for type_name, model in missing:
-                        await _create_subitem(api_token, parent_item_id, counter, type_name, model,
-                                              subitem_board_id, subitem_columns, json_lib)
-                        counter += 1
+                        return {"created": 0, "updated": 1, "skipped": 0, "error": None, "subitemsDeleted": subitems_deleted}
+                    return {"created": 0, "updated": 0, "skipped": 1, "error": None, "subitemsDeleted": subitems_deleted}
 
                 else:
-                    # Create new employee item
-                    col_values = {}
-                    if emp_name_col: col_values[emp_name_col] = emp_name
-                    if num_assets_col: col_values[num_assets_col] = num_assets
                     item_result = await monday_api_call(api_token, f'''mutation {{
-                      create_item(board_id: {board_id}, group_id: "{assets_group_id}", item_name: "{emp_employee_id}", column_values: {json_lib.dumps(json_lib.dumps(col_values))}) {{ id }}
+                      create_item(
+                        board_id: {board_id},
+                        group_id: {json_lib.dumps(assets_group_id)},
+                        item_name: {json_lib.dumps(emp_employee_id)},
+                        column_values: {json_lib.dumps(json_lib.dumps(col_values))}
+                      ) {{ id }}
                     }}''')
                     if "errors" in item_result:
-                        errors.append(f"{emp_employee_id}: {item_result['errors']}")
-                        continue
-                    parent_item_id = item_result.get("data", {}).get("create_item", {}).get("id")
-                    if not parent_item_id:
-                        errors.append(f"{emp_employee_id}: Failed to create")
-                        continue
-                    created_count += 1
-                    print(f"Created: {emp_employee_id}")
-
-                    # Create all subitems for new employee
-                    for i, asset in enumerate(emp_assets):
-                        type_name, model = get_asset_data(asset)
-                        sb_id, subitem_board_id, subitem_columns = await _create_subitem(
-                            api_token, parent_item_id, i+1, type_name, model,
-                            subitem_board_id, subitem_columns, json_lib)
-
-                synced_count += 1
-                print(f"✓ {emp_employee_id}")
+                        return {"created": 0, "updated": 0, "skipped": 0, "error": f"{emp_employee_id}: {item_result['errors']}", "subitemsDeleted": 0}
+                    if not item_result.get("data", {}).get("create_item", {}).get("id"):
+                        return {"created": 0, "updated": 0, "skipped": 0, "error": f"{emp_employee_id}: Failed to create", "subitemsDeleted": 0}
+                    return {"created": 1, "updated": 0, "skipped": 0, "error": None, "subitemsDeleted": 0}
 
             except Exception as e:
-                errors.append(f"{emp.get('employeeId', '?')}: {str(e)}")
                 import traceback; traceback.print_exc()
-                continue
+                return {"created": 0, "updated": 0, "skipped": 0, "error": f"{emp.get('employeeId', '?')}: {str(e)}", "subitemsDeleted": 0}
 
-        # Delete Monday items for employees that no longer exist in our DB
+        row_semaphore = asyncio.Semaphore(MONDAY_ROW_PARALLEL_LIMIT)
+
+        async def limited_process_employee(emp):
+            async with row_semaphore:
+                return await process_employee(emp)
+
+        print(f"Syncing {len(employees)} employee rows to Monday asset matrix...")
+        employee_results = await asyncio.gather(*(limited_process_employee(emp) for emp in employees))
+
+        created_count = sum(r["created"] for r in employee_results)
+        updated_count = sum(r["updated"] for r in employee_results)
+        skipped_count = sum(r["skipped"] for r in employee_results)
+        subitems_deleted = sum(r["subitemsDeleted"] for r in employee_results)
+        errors = [r["error"] for r in employee_results if r.get("error")]
+        our_emp_ids = {str(emp.get("employeeId") or str(emp["_id"])) for emp in employees}
+
         for monday_emp_id, monday_item in monday_map.items():
             if monday_emp_id not in our_emp_ids:
                 await monday_api_call(api_token, f'mutation {{ delete_item(item_id: {monday_item["id"]}) {{ id }} }}')
                 print(f"Deleted removed employee: {monday_emp_id}")
-
-        # Sync Total group - count assets per type
-        print("Syncing Total group...")
-        if "Total" in groups:
-            total_group_id = groups["Total"]
-
-            # Count assets per type from our DB
-            type_counts = {}
-            for a in all_assets:
-                at = asset_types_map.get(a.get("assetTypeId", ""))
-                if at:
-                    type_name = at.get("name", "Unknown")
-                    type_counts[type_name] = type_counts.get(type_name, 0) + 1
-
-            # Get existing Total group items
-            total_items_result = await monday_api_call(api_token,
-                f'query {{ boards(ids: {board_id}) {{ groups(ids: ["{total_group_id}"]) {{ items_page {{ items {{ id name column_values {{ id text }} }} }} }} }} }}')
-            total_groups = total_items_result.get("data", {}).get("boards", [{}])[0].get("groups", [])
-            total_items = total_groups[0].get("items_page", {}).get("items", []) if total_groups else []
-            total_map = {item["name"]: item["id"] for item in total_items}
-
-            # Delete total items for types that no longer exist
-            for item_name, item_id in total_map.items():
-                if item_name not in type_counts:
-                    await monday_api_call(api_token, f'mutation {{ delete_item(item_id: {item_id}) {{ id }} }}')
-
-            # Create or update one row per asset type
-            for type_name, count in type_counts.items():
-                col_values = {}
-                if num_assets_col: col_values[num_assets_col] = count
-                if type_name in total_map:
-                    # Update existing
-                    item_id = total_map[type_name]
-                    col_map = {cv["id"]: cv["text"] for cv in next((i["column_values"] for i in total_items if i["name"] == type_name), [])}
-                    if str(col_map.get(num_assets_col, "")) != str(count):
-                        await monday_api_call(api_token, f'''mutation {{
-                          change_multiple_column_values(item_id: {item_id}, board_id: {board_id}, column_values: {json_lib.dumps(json_lib.dumps(col_values))}) {{ id }}
-                        }}''')
-                        print(f"Updated total: {type_name} = {count}")
-                else:
-                    # Create new
-                    await monday_api_call(api_token, f'''mutation {{
-                      create_item(board_id: {board_id}, group_id: "{total_group_id}", item_name: "{type_name}", column_values: {json_lib.dumps(json_lib.dumps(col_values))}) {{ id }}
-                    }}''')
-                    print(f"Created total: {type_name} = {count}")
 
         await settings_collection.update_one(
             {"type": "monday"},
             {"$set": {"lastSyncAt": datetime.now(timezone.utc)}}
         )
         message = f"Sync complete: {created_count} created, {updated_count} updated, {skipped_count} unchanged"
+        if subitems_deleted:
+            message += f", {subitems_deleted} legacy subitems removed"
         if errors:
             message += f" ({len(errors)} errors)"
         print(message)

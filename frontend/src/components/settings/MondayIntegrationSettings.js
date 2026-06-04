@@ -379,7 +379,7 @@ export function MondayIntegrationSettings() {
                 Monday.com Integration
               </CardTitle>
               <CardDescription>
-                Sync employee and asset data to Monday.com dashboard
+                Sync one employee row with asset type columns and model numbers
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -488,7 +488,7 @@ export function MondayIntegrationSettings() {
                 ) : (
                   <>
                     <TableProperties className="w-4 h-4 mr-2" />
-                    Create Board Structure
+                    Prepare Employee Matrix
                   </>
                 )}
               </Button>

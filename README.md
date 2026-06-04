@@ -199,9 +199,9 @@ Centralized third-party integration management.
 
 ### Monday.com
 - Board structure creation
-- Employee-level grouping
-- Asset subitem synchronization
-- Corrected subitem creation logic
+- Employee-level asset matrix
+- Asset types sync as columns
+- Model numbers sync directly in employee rows
 - Manual resync support
 
 ### Hikvision
