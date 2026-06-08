@@ -1,992 +1,640 @@
-# 🚀 AssetFlow - Complete Local Setup Guide
+# AssetFlow Local Docker Setup
 
+This guide explains how to run AssetFlow on your own computer using Docker.
 
+You do not need to install Python, Node.js, MongoDB, npm packages, or create virtual environments manually. Docker builds and runs everything for you.
 
+## What This Setup Runs
 
+AssetFlow runs as three Docker services:
 
+| Service | Container name | Purpose |
+| --- | --- | --- |
+| `frontend` | `assetflow-frontend` | Serves the React app with nginx |
+| `backend` | `assetflow-backend` | Runs the FastAPI API server |
+| `mongodb` | `assetflow-mongodb` | Stores app data in MongoDB |
 
+The browser talks to one local address:
 
-
-
-
-
-# macOS Local Installation (Auto Setup Script)
-
-This project includes an automatic setup script for macOS.
-
-It installs:
-
-- Backend (Python + FastAPI)
-- Frontend (Node + React)
-- Required dependencies
-- Creates virtual environment
-- Installs npm packages
-- Asks for your MongoDB URI
-- Automatically starts the application
-
-------------------------------------------------------------
-
-## How To Install On macOS
-
-1. Download or clone the GitHub repository
-
-2. Open Terminal inside the project root folder
-
-3. Run:
-
-chmod +x macos_installer.command
-./macos_installer.command
-
-------------------------------------------------------------
-
-The installer will:
-
-• Ask for your MongoDB URI  
-• Install backend & frontend  
-• Start the application  
-
-After installation, it will generate:
-
-start.command
-
-You can use start.command anytime later to run the app again.
-
-
-
-
-
-
-
-
-
-
-# Windows Local Installation (Auto Setup Script)
-
-This project also includes an automatic setup script for Windows.
-
-It installs:
-
-- Backend (Python + FastAPI)
-- Frontend (Node + React)
-- Required dependencies
-- Creates virtual environment
-- Installs npm packages
-- Asks for your MongoDB URI
-- Automatically starts the application
-
-------------------------------------------------------------
-
-## Requirements (Windows)
-
-Before running the installer, make sure:
-
-- Python 3.11 is installed  
-  https://www.python.org/downloads/  
-  (IMPORTANT: enable "Add Python to PATH" during installation)
-
-- Node.js is installed  
-  https://nodejs.org/
-
-------------------------------------------------------------
-
-## How To Install On Windows
-
-1. Download or clone the GitHub repository
-
-2. Open the project root folder
-
-3. Double-click:
-
-windows_installer.bat
-
-OR
-
-Open Command Prompt inside the root folder and run:
-
-windows_installer.bat
-
-------------------------------------------------------------
-
-The installer will:
-
-• Ask for your MongoDB URI  
-• Install backend & frontend  
-• Start the application  
-
-After installation, it will generate:
-
-start.bat
-
-You can use start.bat anytime later to run the app again.
-
-
-
-
-
-
-
-
-
-
-
-
-## ⚠️ IMPORTANT: Follow Steps in Exact Order
-
-This guide will get AssetFlow running on your computer in 30 minutes.
-
----
-
-## 📋 Prerequisites - What You Need
-
-### Required Software Versions
-
-| Software | Minimum Version | Recommended Version | Why Needed |
-|----------|----------------|---------------------|------------|
-| **Node.js** | 18.0.0 | 18.17.0+ | Runs the frontend (React) |
-| **Python** | 3.11.0 | 3.11.5+ | Runs the backend (FastAPI) |
-| **npm** | 9.0.0 | 9.8.0+ | Installs Node packages |
-| **pip** | 23.0.0 | 23.2.0+ | Installs Python packages |
-
-**Optional but Recommended:**
-- **Git** 2.40.0+ (for cloning repository)
-- **MongoDB Compass** (GUI for viewing database)
-
----
-
-## 🖥️ Step-by-Step Installation
-
-### Part 1: Install Node.js
-
-#### For Windows:
-
-1. **Download Node.js:**
-   - Go to: https://nodejs.org/en/download
-   - Click **"Windows Installer (.msi)"** - **64-bit**
-   - Choose **"18.17.1 LTS"** or newer
-
-2. **Run Installer:**
-   - Double-click the downloaded `.msi` file
-   - Click **"Next"** on welcome screen
-   - Accept license agreement → **"Next"**
-   - Choose installation location (default is fine) → **"Next"**
-   - **CHECK**: "Automatically install necessary tools" → **"Next"**
-   - Click **"Install"**
-   - Wait 2-3 minutes
-   - Click **"Finish"**
-
-3. **Verify Installation:**
-   ```cmd
-   # Open NEW Command Prompt (important - must be new)
-   # Press Windows Key, type "cmd", press Enter
-   
-   node --version
-   # Should show: v18.17.1 (or higher)
-   
-   npm --version
-   # Should show: 9.8.1 (or higher)
-   ```
-
-4. **If version doesn't show:**
-   - Close and reopen Command Prompt
-   - Restart computer if needed
-
-#### For macOS:
-
-**Method 1: Official Installer (Easiest)**
-
-1. **Download:**
-   - Go to: https://nodejs.org/en/download
-   - Click **"macOS Installer (.pkg)"**
-   - Choose **"18.17.1 LTS"**
-
-2. **Install:**
-   - Open downloaded `.pkg` file
-   - Follow installation wizard
-   - Enter your Mac password when prompted
-   - Click **"Install"**
-
-3. **Verify:**
-   ```bash
-   # Open Terminal (Cmd + Space, type "terminal")
-   node --version
-   npm --version
-   ```
-
-**Method 2: Using Homebrew (Recommended for Developers)**
-
-```bash
-# Install Homebrew first (if not installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install Node.js
-brew install node@18
-
-# Verify
-node --version
-npm --version
+```text
+http://localhost:8080
 ```
 
-#### For Linux (Ubuntu/Debian):
+The frontend container also forwards API requests to the backend container:
 
-```bash
-# Update package list
-sudo apt update
-
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Verify
-node --version
-npm --version
+```text
+Browser -> frontend nginx -> backend API -> MongoDB
 ```
 
----
+MongoDB is not exposed directly to your computer. It is only available inside the Docker network.
 
-### Part 2: Install Python
+## Requirements
 
-#### For Windows:
+Install these first:
 
-1. **Download Python:**
-   - Go to: https://www.python.org/downloads/
-   - Click **"Download Python 3.11.x"** (big yellow button)
-   - Choose the latest 3.11.x version
+| Requirement | Why it is needed |
+| --- | --- |
+| Docker Desktop | Runs the app containers |
+| Git | Downloads or updates the project |
+| 4 GB free RAM minimum | Docker needs memory for MongoDB, backend, and frontend |
+| 2 GB free disk space minimum | Images, builds, uploads, and database volume |
 
-2. **Run Installer:**
-   - Double-click downloaded `.exe` file
-   - **⚠️ CRITICAL:** Check ☑ **"Add Python to PATH"** (bottom of window)
-   - Click **"Install Now"**
-   - Wait 2-3 minutes
-   - Click **"Close"**
+Recommended:
 
-3. **Verify Installation:**
-   ```cmd
-   # Open NEW Command Prompt
-   python --version
-   # Should show: Python 3.11.x
-   
-   # OR try:
-   python3 --version
-   
-   pip --version
-   # Should show: pip 23.x.x
-   ```
+| Requirement | Recommended |
+| --- | --- |
+| RAM | 8 GB or more |
+| Disk space | 5 GB or more |
+| Docker Desktop | Latest stable version |
 
-4. **If "python" doesn't work, try "python3":**
-   - Use `python3` instead of `python` in all commands below
+## Install Docker Desktop
 
-#### For macOS:
+### Windows
 
-**Using Homebrew (Recommended):**
+1. Download Docker Desktop from:
 
-```bash
-# Install Python 3.11
-brew install python@3.11
-
-# Verify
-python3 --version
-pip3 --version
-
-# Create aliases (optional, makes life easier)
-echo 'alias python=python3' >> ~/.zshrc
-echo 'alias pip=pip3' >> ~/.zshrc
-source ~/.zshrc
+```text
+https://www.docker.com/products/docker-desktop/
 ```
 
-**Official Installer:**
-1. Download from: https://www.python.org/downloads/macos/
-2. Install Python 3.11.x
-3. Follow installation wizard
+2. Install Docker Desktop.
+3. Restart your computer if Docker asks.
+4. Open Docker Desktop.
+5. Wait until Docker says it is running.
 
-#### For Linux (Ubuntu/Debian):
+Check Docker from PowerShell:
 
-```bash
-# Install Python 3.11
-sudo apt update
-sudo apt install python3.11 python3.11-venv python3-pip
-
-# Verify
-python3.11 --version
-pip3 --version
+```powershell
+docker --version
+docker compose version
 ```
 
----
+Both commands should print versions.
 
-### Part 3: Download AssetFlow
+### macOS
 
-#### Option A: Download ZIP (Easiest)
+1. Download Docker Desktop from:
 
-1. **Go to your GitHub repository**
-2. **Click green "Code" button**
-3. **Click "Download ZIP"**
-4. **Save to easy location:**
-   - Windows: `C:\Users\YourName\Desktop\AssetFlow`
-   - macOS: `~/Desktop/AssetFlow`
-5. **Extract ZIP file:**
-   - Right-click → Extract All (Windows)
-   - Double-click ZIP (macOS)
+```text
+https://www.docker.com/products/docker-desktop/
+```
 
-#### Option B: Clone with Git
+2. Install Docker Desktop.
+3. Open Docker Desktop.
+4. Wait until Docker says it is running.
+
+Check Docker from Terminal:
 
 ```bash
-# Windows (Command Prompt) or macOS/Linux (Terminal)
-cd Desktop
-git clone https://github.com/your-username/your-repo-name.git AssetFlow
+docker --version
+docker compose version
+```
+
+### Linux
+
+Install Docker Engine and the Docker Compose plugin using your Linux distribution's official Docker instructions.
+
+After installing, check:
+
+```bash
+docker --version
+docker compose version
+```
+
+If Linux says permission denied when running Docker, add your user to the Docker group or run commands with `sudo`.
+
+## Get The Project
+
+Clone the project:
+
+```bash
+git clone https://github.com/mazinxperia/AssetFlow.git
 cd AssetFlow
 ```
 
----
-
-### Part 4: Set Up MongoDB Atlas
-
-**⚠️ CRITICAL: Without database, nothing works!**
-
-Follow the MongoDB Atlas setup guide in the main README.md (Part: "MongoDB Atlas Setup").
-
-**Quick Summary:**
-1. Create free account at https://mongodb.com/cloud/atlas
-2. Create FREE M0 cluster (512 MB)
-3. Create database user (save username & password!)
-4. Whitelist IP: `0.0.0.0/0` (for testing)
-5. Get connection string - looks like:
-   ```
-   mongodb+srv://username:password@cluster.mongodb.net/assetflow?retryWrites=true&w=majority
-   ```
-6. **SAVE THIS STRING - you'll need it in 2 minutes!**
-
----
-
-### Part 5: Configure Backend
-
-1. **Open Terminal/Command Prompt in Backend Folder:**
-
-   **Windows:**
-   ```cmd
-   cd C:\Users\YourName\Desktop\AssetFlow\backend
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   cd ~/Desktop/AssetFlow/backend
-   ```
-
-2. **Create Environment File:**
-
-   **Windows:**
-   ```cmd
-   copy .env.example .env
-   notepad .env
-   ```
-
-   **macOS:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-
-   **Linux:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-
-3. **Edit .env File:**
-
-   Replace the content with:
-
-   ```env
-   # MongoDB Connection (REPLACE WITH YOUR ATLAS CONNECTION STRING!)
-   MONGODB_URI=mongodb+srv://your-username:your-password@cluster.mongodb.net/assetflow?retryWrites=true&w=majority
-
-   # Database Name
-   DB_NAME=assetflow
-
-   # JWT Secret (Generate random string or use this)
-   JWT_SECRET=AssetFlow2024SecureRandomKey!@#$%^&*()
-
-   # CORS Origins (Frontend URL)
-   CORS_ORIGINS=http://localhost:3000
-
-   # Upload Directory
-   UPLOAD_DIR=./uploads
-   ```
-
-   **⚠️ IMPORTANT:**
-   - Replace the ENTIRE `MONGODB_URI` line with YOUR connection string from MongoDB Atlas
-   - Make sure there are no spaces around the `=` sign
-   - Remove `<password>` and put actual password
-
-4. **Save and Close:**
-   - **Notepad:** File → Save, then close
-   - **nano:** Ctrl+O (save), Enter, Ctrl+X (exit)
-
-5. **Create Virtual Environment:**
-
-   **Windows:**
-   ```cmd
-   python -m venv venv
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   python3 -m venv venv
-   ```
-
-   **What this does:** Creates isolated Python environment (prevents conflicts)
-   **Takes:** 30-60 seconds
-   **Creates:** `venv` folder
-
-6. **Activate Virtual Environment:**
-
-   **Windows (Command Prompt):**
-   ```cmd
-   venv\Scripts\activate
-   ```
-
-   **Windows (PowerShell):**
-   ```powershell
-   venv\Scripts\Activate.ps1
-   ```
-
-   **If PowerShell gives error:**
-   ```powershell
-   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-   venv\Scripts\Activate.ps1
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   source venv/bin/activate
-   ```
-
-   **Success Check:** You should see `(venv)` at start of command line:
-   ```
-   (venv) C:\Users\John\Desktop\AssetFlow\backend>
-   ```
-
-7. **Install Python Dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   **OR if "pip" doesn't work:**
-   ```bash
-   pip3 install -r requirements.txt
-   ```
-
-   **What happens:**
-   - Downloads and installs ~20 packages
-   - Takes 2-5 minutes
-   - Shows progress for each package
-
-   **Expected output:**
-   ```
-   Collecting fastapi==0.110.1
-   Downloading fastapi-0.110.1...
-   Installing collected packages: typing_extensions, annotated-types...
-   Successfully installed fastapi-0.110.1 uvicorn-0.25.0 ...
-   ```
-
-8. **Verify Installation:**
-   ```bash
-   python -c "import fastapi; print('✓ Backend dependencies installed!')"
-   ```
-
-   Should show: `✓ Backend dependencies installed!`
-
----
-
-### Part 6: Configure Frontend
-
-1. **Open NEW Terminal/Command Prompt (keep backend one open!):**
-
-   **Windows:** Press Windows Key, type "cmd", press Enter
-   **macOS:** Cmd+Space, type "terminal", press Enter
-
-2. **Navigate to Frontend Folder:**
-
-   **Windows:**
-   ```cmd
-   cd C:\Users\YourName\Desktop\AssetFlow\frontend
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   cd ~/Desktop/AssetFlow/frontend
-   ```
-
-3. **Create Environment File:**
-
-   **Windows:**
-   ```cmd
-   copy .env.example .env
-   notepad .env
-   ```
-
-   **macOS/Linux:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-
-4. **Edit .env File:**
-
-   ```env
-   REACT_APP_BACKEND_URL=http://localhost:8001
-   ```
-
-   **Keep this EXACTLY as shown above for local development!**
-
-5. **Save and Close**
-
-6. **Install Node Dependencies:**
-
-   ```bash
-   npm install
-   ```
-
-   **OR using Yarn (if you have it):**
-   ```bash
-   yarn install
-   ```
-
-   **What happens:**
-   - Downloads ~1,000 packages
-   - Takes 3-10 minutes (depending on internet speed)
-   - Creates `node_modules` folder (very large - normal!)
-
-   **Expected output:**
-   ```
-   npm WARN deprecated ...
-   added 1452 packages in 4m
-   ```
-
-   **Warnings are NORMAL - you can ignore them**
-
-7. **Verify Installation:**
-   ```bash
-   npm list react
-   ```
-
-   Should show React version without errors
-
----
-
-### Part 7: Start the Application
-
-#### Terminal 1: Start Backend
-
-1. **Make sure you're in backend folder with venv active:**
-   ```
-   (venv) .../AssetFlow/backend>
-   ```
-
-2. **If venv not active, activate it:**
-   - Windows: `venv\Scripts\activate`
-   - macOS/Linux: `source venv/bin/activate`
-
-3. **Start Backend Server:**
-   ```bash
-   uvicorn server:app --reload --host 0.0.0.0 --port 8001
-   ```
-
-   **What each part means:**
-   - `uvicorn` = Web server
-   - `server:app` = Run "app" from "server.py"
-   - `--reload` = Auto-restart on code changes
-   - `--host 0.0.0.0` = Accept connections from any computer
-   - `--port 8001` = Run on port 8001
-
-4. **What You Should See:**
-   ```
-   INFO:     Will watch for changes in these directories: ['/path/to/backend']
-   INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-   INFO:     Started reloader process
-   INFO:     Started server process
-   INFO:     Waiting for application startup.
-   ✓ Connected to MongoDB: assetflow
-   Database initialized
-   INFO:     Application startup complete.
-   ```
-
-   **✅ Key thing to see:** `✓ Connected to MongoDB: assetflow`
-
-   **❌ If you see error:** Check your MONGODB_URI in .env
-
-5. **Test Backend:**
-   - Open browser
-   - Go to: http://localhost:8001/docs
-   - You should see **Swagger API Documentation**
-   - ✅ Backend is running!
-
-6. **Keep this terminal open!**
-
-#### Terminal 2: Start Frontend
-
-1. **In your second terminal, navigate to frontend:**
-   ```bash
-   cd ~/Desktop/AssetFlow/frontend  # macOS/Linux
-   cd C:\Users\YourName\Desktop\AssetFlow\frontend  # Windows
-   ```
-
-2. **Start Frontend Server:**
-   ```bash
-   npm start
-   ```
-
-   **OR with Yarn:**
-   ```bash
-   yarn start
-   ```
-
-3. **What Happens:**
-   - Compiles React application
-   - Takes 30-90 seconds first time
-   - Opens browser automatically!
-
-4. **What You Should See:**
-   ```
-   Compiled successfully!
-
-   You can now view frontend in the browser.
-
-     Local:            http://localhost:3000
-     On Your Network:  http://192.168.x.x:3000
-
-   Note that the development build is not optimized.
-   To create a production build, use npm run build.
-
-   webpack compiled successfully
-   ```
-
-5. **Browser Opens:**
-   - Automatic redirect to http://localhost:3000
-   - You see **AssetFlow Login Page**! 🎉
-
----
-
-### Part 8: First Login
-
-1. **You should see beautiful login page**
-
-2. **Enter Default Credentials:**
-   ```
-   Email: admin@local.internal
-   Password: Admin123!
-   ```
-
-   **⚠️ Note:**
-   - Capital "A" in Admin
-   - Exclamation mark at the end!
-   - Copy-paste to avoid typos
-
-3. **Click "Sign In"**
-
-4. **Success! You're in the Dashboard! 🎊**
-   - You'll see 0 assets, 0 employees (brand new system)
-   - Navigation menu on left
-   - Your name top-right
-
-5. **FIRST THING: Change Password**
-   - Click your name (top-right)
-   - Click "Change Password"
-   - Set new secure password
-
----
-
-## 🎯 Quick Verification Checklist
-
-After completing setup, verify everything works:
-
-### Backend Checks:
-- [ ] Terminal shows "Connected to MongoDB"
-- [ ] Terminal shows "Application startup complete"
-- [ ] No red error messages
-- [ ] http://localhost:8001/docs shows Swagger UI
-
-### Frontend Checks:
-- [ ] Terminal shows "Compiled successfully"
-- [ ] Browser opens automatically
-- [ ] Login page displays correctly
-- [ ] Can login with default credentials
-- [ ] Dashboard loads with 0/0/0 metrics
-
-### Database Checks:
-- [ ] MongoDB Atlas shows "Connected" in cluster
-- [ ] Can see "assetflow" database in Compass (if installed)
-
----
-
-## 🐛 Common Issues & Solutions
-
-### Issue 1: "python: command not found"
-
-**Solution:**
-```bash
-# Try python3 instead
-python3 --version
-python3 -m venv venv
-
-# Or create alias (macOS/Linux)
-alias python=python3
+If you already have the project folder, open a terminal inside the project root. The project root is the folder that contains:
+
+```text
+docker-compose.yml
+backend/
+frontend/
+README.md
 ```
 
-### Issue 2: "Port 8001 already in use"
+## Create Local Environment File
 
-**Solution:**
+The repository includes `.env.example`. Copy it to `.env`.
 
-**Find what's using the port:**
+Windows PowerShell:
 
-**Windows:**
-```cmd
-netstat -ano | findstr :8001
-taskkill /PID <number> /F
+```powershell
+Copy-Item .env.example .env
 ```
 
-**macOS/Linux:**
+macOS or Linux:
+
 ```bash
-lsof -i :8001
-kill -9 <PID>
+cp .env.example .env
 ```
 
-**OR use different port:**
-```bash
-uvicorn server:app --reload --port 8002
-# Then update frontend .env to: REACT_APP_BACKEND_URL=http://localhost:8002
+Default local `.env` values:
+
+```env
+FRONTEND_PORT=8080
+JWT_SECRET=replace-with-a-long-random-secret
+CORS_ORIGINS=http://localhost:8080,http://localhost
 ```
 
-### Issue 3: "Port 3000 already in use"
+For local testing, this is enough. For anything public or shared, replace `JWT_SECRET` with a long random value.
 
-**Solution:**
-```bash
-# Kill process or use different port
-PORT=3001 npm start
+Example strong local secret:
+
+```env
+JWT_SECRET=assetflow-local-change-this-to-a-long-random-secret-123456789
 ```
 
-### Issue 4: "ModuleNotFoundError: No module named 'fastapi'"
+## Start AssetFlow
 
-**Solution:**
+Run this from the project root:
+
 ```bash
-# Make sure virtual environment is active
-# You should see (venv) in terminal
-
-# If not active:
-source venv/bin/activate  # macOS/Linux
-venv\Scripts\activate     # Windows
-
-# Then reinstall:
-pip install -r requirements.txt
+docker compose up --build -d
 ```
 
-### Issue 5: "Cannot find module 'react'"
+What this command does:
 
-**Solution:**
+| Part | Meaning |
+| --- | --- |
+| `docker compose` | Uses `docker-compose.yml` |
+| `up` | Starts the services |
+| `--build` | Builds frontend and backend images from the Dockerfiles |
+| `-d` | Runs containers in the background |
+
+The first build can take a few minutes because Docker downloads base images and installs dependencies.
+
+## Check Containers
+
+Run:
+
 ```bash
-# Delete node_modules and reinstall
-rm -rf node_modules package-lock.json  # macOS/Linux
-# OR
-rmdir /s node_modules  # Windows
-
-npm install
+docker compose ps
 ```
 
-### Issue 6: "Database connection error"
+Expected containers:
 
-**Solutions:**
-
-1. **Check MONGODB_URI in backend/.env**
-   - Open .env file
-   - Verify connection string is correct
-   - No `<password>` - replace with actual password
-   - No spaces around `=`
-
-2. **Test connection directly:**
-   ```bash
-   # If you have mongosh installed
-   mongosh "your-connection-string"
-   ```
-
-3. **Common mistakes:**
-   - Wrong password in connection string
-   - IP not whitelisted (add 0.0.0.0/0 in Atlas)
-   - Cluster not active (check Atlas dashboard)
-   - No internet connection
-
-### Issue 7: "Network Error" when trying to login
-
-**Solution:**
-
-1. **Check backend is running**
-   - Terminal 1 should show "Application startup complete"
-   - Visit http://localhost:8001/docs
-
-2. **Check CORS settings**
-   - backend/.env should have: `CORS_ORIGINS=http://localhost:3000`
-
-3. **Check frontend .env**
-   - Should have: `REACT_APP_BACKEND_URL=http://localhost:8001`
-
-4. **Restart both servers**
-
-### Issue 8: npm/yarn is slow or hanging
-
-**Solution:**
-```bash
-# Clear npm cache
-npm cache clean --force
-
-# Try with verbose output
-npm install --verbose
-
-# Or switch to yarn
-npm install -g yarn
-yarn install
+```text
+assetflow-mongodb
+assetflow-backend
+assetflow-frontend
 ```
 
-### Issue 9: Permission denied (macOS/Linux)
+Healthy/running state should look similar to:
 
-**Solution:**
-```bash
-# Don't use sudo! Instead fix permissions:
-sudo chown -R $USER ~/Desktop/AssetFlow
-
-# For npm global packages:
-mkdir ~/.npm-global
-npm config set prefix '~/.npm-global'
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.profile
-source ~/.profile
+```text
+assetflow-mongodb    Up ... (healthy)
+assetflow-backend    Up ... (healthy)
+assetflow-frontend   Up ...
 ```
 
----
+The frontend container does not need a health label. If it is `Up`, it is running.
 
-## 🔄 Stopping the Application
+## Open The App
 
-**To stop servers:**
-1. Go to each terminal
-2. Press **Ctrl+C**
-3. Wait for graceful shutdown
+Open:
 
-**To stop completely:**
+```text
+http://localhost:8080
+```
+
+Default first login on a fresh database:
+
+```text
+Email:    admin@local.internal
+Password: Admin123!
+```
+
+Change this password before using the app seriously.
+
+## Health Checks
+
+Frontend/nginx health route:
+
+```text
+http://localhost:8080/health
+```
+
+Backend API health route through the frontend proxy:
+
+```text
+http://localhost:8080/api/health
+```
+
+PowerShell:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/health
+```
+
+macOS/Linux:
+
 ```bash
-# Backend terminal:
-Ctrl+C
-deactivate  # exits virtual environment
+curl http://localhost:8080/api/health
+```
 
-# Frontend terminal:
+Expected result:
+
+```json
+{"status":"healthy"}
+```
+
+The response may also include a timestamp.
+
+## Useful Docker Commands
+
+### View Running Containers
+
+```bash
+docker compose ps
+```
+
+### View Logs
+
+All logs:
+
+```bash
+docker compose logs -f
+```
+
+Backend only:
+
+```bash
+docker compose logs -f backend
+```
+
+Frontend only:
+
+```bash
+docker compose logs -f frontend
+```
+
+MongoDB only:
+
+```bash
+docker compose logs -f mongodb
+```
+
+Stop watching logs with:
+
+```text
 Ctrl+C
 ```
 
----
+### Stop The App
 
-## 🚀 Starting Application Again (Next Time)
-
-**Quick Start (after initial setup):**
-
-**Terminal 1 - Backend:**
 ```bash
-cd ~/Desktop/AssetFlow/backend
-source venv/bin/activate  # macOS/Linux
-# OR venv\Scripts\activate  # Windows
-uvicorn server:app --reload --host 0.0.0.0 --port 8001
+docker compose down
 ```
 
-**Terminal 2 - Frontend:**
+This stops and removes containers, but it keeps your database and uploaded files in Docker volumes.
+
+### Start Again Later
+
 ```bash
-cd ~/Desktop/AssetFlow/frontend
-npm start
+docker compose up -d
 ```
 
-**That's it! Much faster second time!**
+Use `--build` again only when code or dependencies changed:
 
----
-
-## 📊 System Requirements Summary
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| **RAM** | 4 GB | 8 GB |
-| **Storage** | 2 GB free | 5 GB free |
-| **Internet** | Required | Broadband |
-| **OS** | Windows 10, macOS 10.15, Ubuntu 20.04 | Latest versions |
-
----
-
-## 🎓 Understanding the Stack
-
-**What runs where:**
-
-```
-┌─────────────────────────────────────────┐
-│  Browser (http://localhost:3000)        │
-│  Frontend - React Application           │
-│  What you see and click                 │
-└──────────────┬──────────────────────────┘
-               │ HTTP Requests
-┌──────────────▼──────────────────────────┐
-│  Backend (http://localhost:8001)        │
-│  FastAPI - Python Server                │
-│  Business logic, API endpoints          │
-└──────────────┬──────────────────────────┘
-               │ MongoDB Queries
-┌──────────────▼──────────────────────────┐
-│  MongoDB Atlas (Cloud)                   │
-│  Database - Stores all data             │
-│  Assets, Employees, Transfers, Settings │
-└─────────────────────────────────────────┘
+```bash
+docker compose up --build -d
 ```
 
----
+### Restart One Service
 
-## ✅ Success!
+Backend:
 
-If you made it here, you now have:
-- ✅ AssetFlow running locally
-- ✅ Backend on http://localhost:8001
-- ✅ Frontend on http://localhost:3000
-- ✅ Connected to MongoDB Atlas
-- ✅ Can login and use all features
+```bash
+docker compose restart backend
+```
 
-**Next Steps:**
-1. Change default password
-2. Configure SMTP (Settings → Integration → SMTP)
-3. Add your first employee
-4. Add your first asset
-5. Start managing your IT assets!
+Frontend:
 
----
+```bash
+docker compose restart frontend
+```
 
-## 📞 Getting Help
+MongoDB:
 
-**If you get stuck:**
+```bash
+docker compose restart mongodb
+```
 
-1. **Check Logs:**
-   - Backend: Look at Terminal 1 output
-   - Frontend: Browser console (F12 → Console)
+### Rebuild After Code Changes
 
-2. **Common Commands:**
-   ```bash
-   # Check versions
-   node --version
-   python --version
-   pip --version
+```bash
+docker compose up --build -d
+```
 
-   # Test imports
-   python -c "import fastapi; print('OK')"
+If Docker cache seems stale:
 
-   # Check ports
-   lsof -i :8001  # macOS/Linux
-   netstat -ano | findstr :8001  # Windows
-   ```
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
 
-3. **Database Testing:**
-   ```bash
-   # Test MongoDB connection
-   mongosh "your-connection-string"
-   ```
+## Where Data Is Stored
 
-4. **Review README.md** for detailed feature configuration
+AssetFlow local Docker data is stored in Docker volumes:
 
----
+| Volume | Stores |
+| --- | --- |
+| `assetflow_mongodb_data` or `<folder>_mongodb_data` | MongoDB database data |
+| `assetflow_backend_uploads` or `<folder>_backend_uploads` | Uploaded files |
 
-**Built with ❤️ using React, FastAPI, and MongoDB**
+Docker volume names can include the project folder name. For example, if the folder is named `Official Repo`, Docker may create names based on the normalized Compose project name.
+
+List volumes:
+
+```bash
+docker volume ls
+```
+
+Inspect a volume:
+
+```bash
+docker volume inspect officialrepo_mongodb_data
+```
+
+## Important: Do Not Delete Volumes Accidentally
+
+This command is safe for normal stopping:
+
+```bash
+docker compose down
+```
+
+This command deletes local app data:
+
+```bash
+docker compose down -v
+```
+
+Only use `docker compose down -v` if you intentionally want to reset the database and uploaded files.
+
+## Reset Local Data Completely
+
+If you want a clean fresh database:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+After reset, the app will recreate the default admin account:
+
+```text
+Email:    admin@local.internal
+Password: Admin123!
+```
+
+## Change The Local Port
+
+By default the app uses:
+
+```text
+http://localhost:8080
+```
+
+To use another port, edit `.env`:
+
+```env
+FRONTEND_PORT=8081
+```
+
+Then restart:
+
+```bash
+docker compose up -d
+```
+
+Open:
+
+```text
+http://localhost:8081
+```
+
+Also update `CORS_ORIGINS` if needed:
+
+```env
+CORS_ORIGINS=http://localhost:8081,http://localhost
+```
+
+Then rebuild/restart:
+
+```bash
+docker compose up --build -d
+```
+
+## How The Services Connect
+
+The Docker Compose file creates a private network:
+
+```text
+assetflow-network
+```
+
+Inside that network:
+
+| From | To | Address |
+| --- | --- | --- |
+| Backend | MongoDB | `mongodb://mongodb:27017` |
+| Frontend nginx | Backend | `http://backend:8001` |
+| Browser | Frontend | `http://localhost:8080` |
+
+That is why you do not need a MongoDB Atlas URI for local Docker.
+
+## Environment Variables Used By Docker
+
+From `.env`:
+
+| Variable | Used by | Meaning |
+| --- | --- | --- |
+| `FRONTEND_PORT` | Docker Compose frontend port mapping | Host port for the web app |
+| `JWT_SECRET` | Backend | Secret used to sign login tokens |
+| `CORS_ORIGINS` | Backend | Allowed browser origins |
+
+Set directly in `docker-compose.yml`:
+
+| Variable | Value |
+| --- | --- |
+| `MONGODB_URI` | `mongodb://mongodb:27017` |
+| `DB_NAME` | `assetflow` |
+
+## Updating The Local App
+
+If you cloned from GitHub:
+
+```bash
+git pull
+docker compose up --build -d
+```
+
+If package dependencies or Dockerfiles changed, the same command is enough.
+
+If you want to see logs after updating:
+
+```bash
+docker compose logs -f backend frontend mongodb
+```
+
+## Common Problems
+
+### Docker Is Not Running
+
+Error examples:
+
+```text
+Cannot connect to the Docker daemon
+```
+
+Fix:
+
+1. Open Docker Desktop.
+2. Wait until Docker says it is running.
+3. Run the command again.
+
+### Port 8080 Is Already Used
+
+Error example:
+
+```text
+Bind for 0.0.0.0:8080 failed: port is already allocated
+```
+
+Fix:
+
+Edit `.env`:
+
+```env
+FRONTEND_PORT=8081
+CORS_ORIGINS=http://localhost:8081,http://localhost
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+Open:
+
+```text
+http://localhost:8081
+```
+
+### Backend Is Not Healthy
+
+Check backend logs:
+
+```bash
+docker compose logs backend
+```
+
+Common causes:
+
+| Cause | Fix |
+| --- | --- |
+| MongoDB is still starting | Wait 20-40 seconds, then run `docker compose ps` again |
+| Bad `.env` formatting | Check `.env` has no quotes unless needed |
+| Docker build failed | Run `docker compose up --build -d` again and check output |
+
+### Login Page Shows But Login Fails
+
+Check API health:
+
+```bash
+curl http://localhost:8080/api/health
+```
+
+If API health fails:
+
+```bash
+docker compose logs backend
+docker compose logs frontend
+```
+
+If API health works but login fails, make sure you are using the default account only on a fresh database:
+
+```text
+Email:    admin@local.internal
+Password: Admin123!
+```
+
+If you changed the password earlier, the old default password will no longer work.
+
+### Blank Page Or Old Frontend
+
+Rebuild frontend:
+
+```bash
+docker compose up --build -d frontend
+```
+
+If still stale, rebuild all:
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+### MongoDB Data Looks Old
+
+Docker keeps MongoDB in a volume. Stopping containers does not delete the database.
+
+To reset completely:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+## Local Development Notes
+
+This Docker setup is designed to run the production-style app locally:
+
+- React is built into static files.
+- nginx serves the frontend.
+- nginx proxies `/api/*` to the backend.
+- Backend runs with Uvicorn.
+- MongoDB runs in its own container.
+
+This is different from old manual development where frontend ran on `localhost:3000` and backend ran on `localhost:8001` directly on your computer.
+
+For normal use, screenshots, testing, and VPS rehearsal, use Docker.
+
+## Quick Command Summary
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+Reset all local data:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```

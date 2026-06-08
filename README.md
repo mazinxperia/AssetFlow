@@ -1,386 +1,748 @@
-# 🎯 AssetFlow  
-### Modern IT Asset & Subscription Management Platform
+<div align="center">
+
+# AssetFlow
+
+Self-hosted IT asset, employee, subscription, transfer, and vehicle fleet management platform.
+
+Built for internal teams that need clear ownership tracking, controlled asset movement, Docker-based deployment, and a modern web dashboard backed by MongoDB.
+
+</div>
 
 ---
 
-## Overview
+## Table Of Contents
+
+- [Quick Glance](#quick-glance)
+- [Scope And Intent](#scope-and-intent)
+- [Current Validated Setup](#current-validated-setup)
+- [App Specification](#app-specification)
+- [What The App Does](#what-the-app-does)
+- [Feature Overview](#feature-overview)
+- [Screenshots](#screenshots)
+- [Mobile Screenshots](#mobile-screenshots)
+- [Architecture Overview](#architecture-overview)
+- [Docker Runtime Model](#docker-runtime-model)
+- [Local Setup](#local-setup)
+- [VPS Deployment](#vps-deployment)
+- [Data And Storage](#data-and-storage)
+- [Security And Access Control](#security-and-access-control)
+- [Mobile App](#mobile-app)
+- [Project Structure](#project-structure)
+- [Repository Notes](#repository-notes)
 
-**AssetFlow** is a modular IT Asset and Resource Management platform designed to help organizations track physical assets, manage digital subscriptions, control employee allocations, and centralize operational oversight within a single system.
+> [!TIP]
+> Use the links above to jump to a section. Most sections are collapsible, so open only the details you need.
 
-The platform combines structured data modeling, controlled transfer workflows, and administrative configuration tools with a modern, interactive interface.
+## Quick Glance
 
-AssetFlow is built for internal IT departments, growing companies, and organizations that require clear asset visibility and accountability.
+| Item | Details |
+| --- | --- |
+| Primary purpose | Internal IT asset lifecycle and resource management |
+| Current deployment model | Docker Compose |
+| Local app URL | `http://localhost:8080` |
+| Frontend | React, TailwindCSS, Radix UI, Framer Motion, Recharts |
+| Backend | FastAPI, Uvicorn, Motor, PyMongo |
+| Database | MongoDB 7 container by default |
+| Reverse proxy | nginx inside the frontend container |
+| Mobile companion | React Native / Expo Android app |
+| Default fresh login | `admin@local.internal` / `Admin123!` |
+| Main setup docs | `LOCAL_SETUP.md` and `VPS_DEPLOYMENT.md` |
 
----
+AssetFlow is a Docker-first internal management system for assets, employees, inventory, transfers, disposed assets, subscriptions, vehicle fleet records, settings, branding, integrations, backup/restore, and mobile access.
 
-## Technology Stack
+The current project no longer depends on the old manual Python/Node installer flow. The standard setup is Docker Compose.
 
-**Frontend**
-- React
-- TailwindCSS
-- Framer Motion
+## Scope And Intent
 
-**Backend**
-- FastAPI (Python)
-- Async MongoDB driver (Motor)
-- JWT-based authentication
+<details>
+<summary><strong>Open section</strong></summary>
 
-**Database**
-- MongoDB (Atlas compatible)
+<br>
 
-**Mobile**
-- React Native (Expo)
-- Zustand
-- React Navigation v6
+AssetFlow is built for organizations that need a practical internal system to answer questions like:
 
----
+- who currently owns each IT asset
+- which assets are still in inventory
+- which assets were disposed and why
+- what was transferred, from whom, to whom, and when
+- which SaaS subscriptions are active, expired, or renewing soon
+- what vehicles belong to the company fleet
+- how much database storage the installation is using
+- which users can view, write, or administer the system
 
-# Core Modules
+The project is intended for self-hosted internal use, not as a public multi-tenant SaaS product.
 
----
+The current repository is centered around:
 
-## 1️⃣ Dashboard
+- Docker local setup
+- Docker VPS deployment
+- local MongoDB container by default
+- persistent Docker volumes for database and uploads
+- one public browser entry point for the app
 
-The dashboard provides real-time operational insight into organizational assets.
+</details>
 
-### Displays
+## Current Validated Setup
 
-- Total Employees
-- Total Assets
-- Assigned Assets
-- Assets in Inventory
-- Assignment status breakdown
-- Assets by type
-- Distribution overview
-- Adaptive metric widgets
+<details>
+<summary><strong>Open section</strong></summary>
 
-Dashboard components automatically adjust based on available system data.
+<br>
 
----
+The current app has been validated with Docker Compose using:
 
-## 2️⃣ Asset Management
+| Component | Current setup |
+| --- | --- |
+| Frontend container | nginx serving the React production build |
+| Backend container | FastAPI running through Uvicorn on port `8001` inside Docker |
+| Database container | MongoDB 7 on the internal Docker network |
+| Public local port | `8080` |
+| API path | `/api/*` through the frontend nginx proxy |
+| Health checks | `/health` and `/api/health` |
 
-Comprehensive lifecycle tracking for physical IT equipment.
+Current local browser entry point:
 
-### Features
+```text
+http://localhost:8080
+```
 
-- Unlimited asset types (Laptop, Mobile, Tablet, etc.)
-- Dynamic custom field system per asset type
-- Unique asset tag enforcement
-- Backend duplicate prevention
-- Asset status tracking:
-  - Active
-  - Under Repair
-  - Retired
-- Warranty expiry detection with visual indicators
-- Asset image uploads
-- Clean model-number–focused detail view
-- Employee assignment linking
+Current Docker services:
 
-All assets follow structured schemas defined per asset type.
+```text
+assetflow-frontend
+assetflow-backend
+assetflow-mongodb
+```
 
----
+The screenshots in this README were captured from the Docker-running app at `http://localhost:8080` with populated demo data.
 
-## 3️⃣ Employee Management
+</details>
 
-Structured employee profiles with asset mapping.
+## App Specification
 
-### Features
+<details>
+<summary><strong>Open section</strong></summary>
 
-- Unique employee ID system
-- Department and designation tracking
-- Assigned asset overview
-- Direct navigation between employee and asset records
-- Individual employee export capability
-- Assignment updates via structured transfer workflow
+<br>
 
----
-
-## 4️⃣ Inventory
-
-Automatic identification of unassigned assets.
-
-### Capabilities
-
-- Dedicated inventory view
-- Asset type filtering
-- Quick assignment from inventory
-- Clear separation between assigned and available devices
-
----
-
-## 5️⃣ Transfers
-
-Guided multi-step asset reassignment workflow.
-
-### Features
-
-- Source validation (cannot select employees without assets)
-- Step-based transfer wizard
-- Search reset handling between steps
-- Styled confirmation modal
-- Complete audit trail including:
-  - Standardized timestamp
-  - From employee
-  - To employee
-  - Performed by
-  - Transfer notes (popup view)
-- Controlled deletion endpoint (admin-restricted)
-
-All transfers are structured for traceability and accountability.
-
----
-
-## 6️⃣ Subscriptions
-
-Integrated SaaS and digital service tracking.
-
-### Features
-
-- Add and edit subscription records
-- Department association
-- Login URL storage
-- Server-side logo fetch (CORS-safe favicon retrieval)
-- Base64 file storage within MongoDB
-- Clean list layout without clutter badges
-- Integrated clear-data handling
-
-Subscriptions are managed as structured organizational resources.
-
----
-
-# Settings Architecture
-
-The Settings module is fully modular and centralized.
-
----
-
-## Fields
-
-### Asset Fields
-- Create and manage dynamic fields per asset type
-- Field type enforcement
-- Required field validation
-
-### Employee Fields
-- Extend employee schema dynamically
-- Structured validation rules
-
----
-
-## Personalization
-
-- Theme configuration
-- Dark mode support
-- Accent consistency
-
----
-
-## Branding
-
-- Company logo upload
-- Favicon configuration
-- Login background customization
-- Real-time preview updates
-
-All branding assets are securely stored within MongoDB.
-
----
-
-## Integration Hub
-
-Centralized third-party integration management.
-
-### SMTP
-- TLS/SSL configuration
-- Test email capability
-- Export-to-email support
-- Configurable sender identity
-
-### Monday.com
-- Board structure creation
-- Employee-level asset matrix
-- Asset types sync as columns
-- Model numbers sync directly in employee rows
-- Manual resync support
-
-### Hikvision
-- Device endpoint configuration
-- Trailing slash normalization handling
-- Structured API request management
-
-### HRMS
-- Reserved module for future HR system synchronization
-
-### API Key
-- Token-based external API access management (expandable)
-
----
-
-## Database Controls
-
-### Database
-Core configuration panel.
-
-### Database Storage
-- Atlas allocated vs actual data clarity
-- Storage metric visibility improvements
-
-### Date & Time
-- Standardized timestamp formatting
-- Timezone handling support
-
-### Backup & Restore
-- Full system export (.assetflow format)
-- ObjectId-safe serialization
-- ID preservation during restore
-- Assignment integrity retention
-
----
-
-# Authentication Experience
-
-AssetFlow includes a visually immersive and interactive authentication interface.
-
-## Login Interface Highlights
-
-### Visual Design
-- Dark glassmorphism authentication panel
-- Dynamic constellation background animation
-- Soft particle motion with depth layering
-- Subtle glow and gradient accents
-
-### Interactive Effects
-- Click-based ripple / shockwave effect
-- Particle displacement interaction
-- Smooth hover transitions
-- Animated gradient sign-in button
-
-### UX Enhancements
-- Password visibility toggle
-- Autofill styling correction for dark theme
-- Responsive layout across screen sizes
-- Minimal structured form layout
-
-The login interface establishes a modern SaaS-grade experience from the first interaction.
-
----
-
-# 📱 Mobile App
-
-AssetFlow includes a native Android mobile companion app built with **React Native (Expo)**. It connects directly to the same FastAPI backend that powers the web dashboard — no separate backend required.
-
-The mobile app is distributed as a standalone APK for internal use. It is not published to the Play Store.
-
----
-
-## Mobile Tech Stack
+### Frontend
 
 | Technology | Purpose |
-|---|---|
-| React Native 0.76 | Core mobile framework |
-| Expo SDK 52 | Build platform and native modules |
-| React Navigation v6 | Screen navigation |
-| React Native Reanimated 3 | 60fps GPU-accelerated animations |
-| Zustand | Global state management |
-| AsyncStorage | Local data persistence |
-| Axios | HTTP client with interceptors |
-| FlashList | High-performance scrollable lists |
-| NetInfo | Real-time network monitoring |
-| expo-haptics | Haptic feedback on interactions |
+| --- | --- |
+| React 19 | Web application UI |
+| React Router | Page routing |
+| TailwindCSS | Styling system |
+| Radix UI | Accessible UI primitives |
+| Framer Motion | Motion and interactive transitions |
+| Recharts | Dashboard charts and visual summaries |
+| Axios | API client |
+| Sonner | Toast notifications |
+| lucide-react | Icon system |
 
----
+### Backend
 
-## How It Connects to the Backend
+| Technology | Purpose |
+| --- | --- |
+| FastAPI | REST API framework |
+| Uvicorn | ASGI server |
+| Motor | Async MongoDB driver |
+| PyMongo | MongoDB support utilities |
+| Pydantic | Request and response validation |
+| JWT | Authentication tokens |
+| bcrypt | Password hashing |
+| APScheduler | Scheduled backend tasks |
+| httpx / requests | External HTTP integrations |
 
-The mobile app is a **pure client** — it has no database or server of its own. During the onboarding setup, the user enters the backend URL (e.g. `http://192.168.1.x:8001` on a local network, or a deployed URL like `https://your-app.onrender.com`).
+### Runtime
 
-From that point, every API call goes directly to the FastAPI backend using the same REST endpoints as the web frontend. Authentication uses the same JWT token system — the user logs in with their AssetFlow credentials and the token is stored locally.
+| Component | Purpose |
+| --- | --- |
+| Docker Compose | Runs the complete stack |
+| MongoDB 7 | Local database service |
+| nginx | Serves frontend and proxies API requests |
+| Docker volumes | Persist database and uploaded files |
 
-The app checks `GET /health` on the backend every 30 seconds to monitor connectivity. When the backend goes offline, the app automatically switches to offline mode — blocking write operations while keeping cached data readable.
+### Mobile
 
-```
-Mobile App (React Native)
-        |
-        | HTTP / HTTPS
-        v
-FastAPI Backend (IT-ASSETS)
-        |
-        v
-MongoDB Database
-```
+| Technology | Purpose |
+| --- | --- |
+| React Native | Android mobile app |
+| Expo | Mobile build/runtime tooling |
+| Zustand | Mobile state management |
+| React Navigation | Mobile navigation |
+| AsyncStorage | Local mobile persistence |
 
----
+</details>
 
-## Mobile Features
+## What The App Does
 
-### Onboarding
-A 6-scene animated setup flow on first launch. The ConnectScene features a cinematic dark forest SVG animation that runs at 60fps. When the backend connects successfully, the forest transitions from dead (dark teal) to alive (green) — signaling the app is live. Subsequent scenes let the user pick their theme and accent color.
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+AssetFlow centralizes the operational records normally scattered across spreadsheets, chat messages, purchase logs, and manual IT notes.
+
+It tracks:
+
+- employees
+- asset types
+- physical assets
+- asset assignments
+- inventory
+- disposed assets
+- transfer history
+- subscriptions and license renewals
+- company vehicle fleet records
+- users and roles
+- settings, branding, integrations, and backup data
+
+The system is built around accountability:
+
+1. Create employees.
+2. Define asset types and custom fields.
+3. Add assets with structured metadata.
+4. Assign assets to employees or keep them in inventory.
+5. Transfer assets through a traceable workflow.
+6. Dispose assets without losing history.
+7. Track subscriptions, costs, renewals, and logos.
+8. Maintain vehicle records with PNG vehicle images and custom fields.
+9. Control write/admin access through roles.
+
+</details>
+
+## Feature Overview
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
 
 ### Dashboard
-Live stat cards with animated count-up numbers. Asset type breakdown and assignment status summary. Pull-to-refresh on all data.
+
+The dashboard gives a live operational summary of the organization.
+
+Current dashboard areas include:
+
+- total employees
+- total active assets
+- assigned assets
+- inventory assets
+- disposed assets
+- asset type distribution
+- assignment status
+- recent transfers
+- vehicle fleet preview
+- subscription renewal and cost summary
+- database storage summary
 
 ### Asset Management
-Full create, view, edit, and delete support. Search and filter. Status badges. Role-gated write access.
+
+Asset records support structured lifecycle management.
+
+Features include:
+
+- custom asset types
+- dynamic fields per asset type
+- unique asset tags
+- assignment to employees
+- inventory state for unassigned assets
+- warranty and metadata fields
+- image support
+- asset detail pages
+- edit and delete controls based on role
 
 ### Employee Management
-Full CRUD with avatar initials. Custom field support matching the web platform's dynamic employee schema.
 
-### Subscription Tracking
-View and manage SaaS subscriptions with cost display.
+Employee records are linked directly to assigned assets.
+
+Features include:
+
+- unique employee IDs
+- dynamic employee fields
+- department and contact-style metadata
+- assigned asset visibility
+- direct navigation between employees and assets
+- role-gated create/edit/delete actions
 
 ### Inventory
-Filtered view of unassigned assets with direct navigation to asset detail.
+
+Inventory is automatically derived from assets that are not assigned to employees.
+
+It helps teams see:
+
+- available devices
+- unassigned stock
+- devices ready for reassignment
+- assets grouped by type
+
+### Disposed Assets
+
+Disposed assets are kept separately instead of being silently lost.
+
+This keeps history clear for:
+
+- retired devices
+- damaged devices
+- sold or written-off equipment
+- audit trails
+- lifecycle reporting
 
 ### Transfers
-Transfer history with from/to employee, performed by, and date.
 
-### User Management
-View all users with role badges. Super Admin restricted delete.
+Transfers create a traceable movement history for assets.
 
-### Offline Mode
-When the backend is unreachable, all write operations are blocked and a red toast notification appears. Cached list data remains readable. The ReconnectBubble panel appears to let the user re-enter or retry the backend URL.
+The transfer flow supports:
 
----
+- source validation
+- employee-to-employee movement
+- inventory-to-employee movement
+- employee-to-inventory movement
+- notes
+- manual transfer records
+- recent transfer summaries
+- full history view
 
-## Mobile Navigation Structure
+### Subscriptions
 
+The subscription module tracks SaaS tools, renewals, and costs.
+
+Features include:
+
+- subscription name and vendor details
+- department association
+- renewal dates
+- active, expiring, and expired status
+- monthly/yearly cost summary
+- login URL storage
+- server-side logo/favicon fetching
+- manual renewal visibility
+
+### Vehicle Fleet
+
+The vehicle fleet module tracks company vehicles with visual PNG vehicle images.
+
+Features include:
+
+- required vehicle name
+- required PNG vehicle image
+- custom fleet fields
+- plate number
+- driver
+- department
+- status
+- service date
+- insurance expiry
+- odometer values
+- animated vehicle selector/detail interface
+
+### Settings
+
+Settings are centralized and modular.
+
+Major settings areas include:
+
+- asset fields
+- employee fields
+- vehicle fields
+- branding
+- personalization
+- integrations
+- SMTP
+- Monday.com
+- database controls
+- storage visibility
+- date and time settings
+- backup and restore
+- users and roles
+
+### Music Player
+
+The app includes a global music player layer that can be configured from the system settings.
+
+It is available across authenticated screens and is designed as an internal UI personalization feature.
+
+</details>
+
+## Screenshots
+
+Main AssetFlow screens captured from the running Docker app:
+
+<p align="center">
+  <img src="./Screenshots/Login%20Page.png" alt="AssetFlow login page" width="420" />
+  <img src="./Screenshots/Dashboard%201.png" alt="AssetFlow dashboard overview" width="420" />
+</p>
+
+<p align="center">
+  <img src="./Screenshots/Dashboard%202.png" alt="AssetFlow dashboard details" width="420" />
+  <img src="./Screenshots/Assets%20List.png" alt="AssetFlow asset list" width="420" />
+</p>
+
+<p align="center">
+  <img src="./Screenshots/Assets%20Detail.png" alt="AssetFlow asset detail" width="420" />
+  <img src="./Screenshots/Employees.png" alt="AssetFlow employees page" width="420" />
+</p>
+
+<p align="center">
+  <img src="./Screenshots/Transfers.png" alt="AssetFlow transfers page" width="420" />
+  <img src="./Screenshots/Subsciption.png" alt="AssetFlow subscriptions page" width="420" />
+</p>
+
+<p align="center">
+  <img src="./Screenshots/Vehicle%20Fleet.png" alt="AssetFlow vehicle fleet page" width="420" />
+  <img src="./Screenshots/Settings.png" alt="AssetFlow settings page" width="420" />
+</p>
+
+Screenshot files are stored in:
+
+```text
+Screenshots/
 ```
-App Launch
-  │
-  ├─ First run → Onboarding (6 scenes)
-  ├─ Not logged in → Login
-  └─ Logged in → Main App
-        ├─ Dashboard
-        ├─ Assets
-        │   ├─ Hub → Asset List → Asset Detail
-        │   ├─ Employee List → Employee Detail
-        │   ├─ Subscription List → Subscription Detail
-        │   ├─ Inventory
-        │   ├─ Transfers
-        │   ├─ Asset Types
-        │   └─ Employee Fields
-        ├─ Users
-        └─ Account & Settings
+
+## Mobile Screenshots
+
+Mobile companion app screens:
+
+<p align="center">
+  <img src="./Screenshots/Mobile_Dashboard.jpeg" alt="AssetFlow mobile dashboard" width="230" />
+  <img src="./Screenshots/Mobile_Asset.jpeg" alt="AssetFlow mobile asset screen" width="230" />
+  <img src="./Screenshots/Mobile_Settings.jpeg" alt="AssetFlow mobile settings screen" width="230" />
+</p>
+
+These screenshots show the current Android companion app experience. The mobile app is designed to connect to the same AssetFlow backend URL used by the web system.
+
+## Architecture Overview
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+AssetFlow is organized as a full-stack web app with a mobile companion.
+
+```text
+AssetFlow/
+├── frontend/             # React web app, built and served by nginx
+├── backend/              # FastAPI API server
+├── mobile/               # React Native / Expo Android app
+├── Screenshots/          # README screenshots
+├── docker-compose.yml    # Local/VPS Docker orchestration
+├── LOCAL_SETUP.md        # Detailed local Docker guide
+├── VPS_DEPLOYMENT.md     # Detailed VPS Docker guide
+└── README.md             # Project overview
 ```
 
-The bottom navigation bar is a floating pill-style tab bar with spring animations. All four main tabs render simultaneously with parallax slide transitions — no remounting, no flicker.
+Runtime architecture:
 
----
+```text
+Browser
+  |
+  v
+frontend container
+  |
+  |-- serves React app
+  |
+  |-- proxies /api/* requests
+        |
+        v
+    backend container
+        |
+        v
+    mongodb container
+```
 
-## Mobile Role-Based Access
+Important design points:
 
-| Feature | SUPER_ADMIN | ADMIN | USER |
-|---|---|---|---|
-| View all screens | ✅ | ✅ | ✅ |
-| Add / Edit assets, employees, subscriptions | ✅ | ✅ | ❌ |
-| Delete records | ✅ | ✅ | ❌ |
-| Manage asset types / employee fields | ✅ | ✅ | ❌ |
-| Delete users | ✅ | ❌ | ❌ |
+- the browser uses one public app URL
+- frontend nginx proxies API calls internally
+- backend is not directly exposed by default
+- MongoDB is not exposed publicly
+- database and uploads persist through Docker volumes
 
----
+</details>
 
-## Building the Mobile APK
+## Docker Runtime Model
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+Docker Compose runs three services.
+
+### `mongodb`
+
+```text
+Container: assetflow-mongodb
+Image: mongo:7
+Purpose: persistent database
+```
+
+MongoDB data is stored in a Docker volume.
+
+### `backend`
+
+```text
+Container: assetflow-backend
+Runtime: Python 3.11 slim
+Server: Uvicorn
+API: FastAPI
+Internal port: 8001
+```
+
+The backend connects to MongoDB using the internal Docker hostname:
+
+```text
+mongodb://mongodb:27017
+```
+
+### `frontend`
+
+```text
+Container: assetflow-frontend
+Runtime: nginx
+Public local port: 8080 by default
+Internal container port: 80
+```
+
+nginx serves the React app and proxies:
+
+```text
+/api/* -> backend:8001
+```
+
+This is why the browser only needs:
+
+```text
+http://localhost:8080
+```
+
+</details>
+
+## Local Setup
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+The recommended local setup is Docker Compose.
+
+Quick start:
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Default fresh login:
+
+```text
+Email:    admin@local.internal
+Password: Admin123!
+```
+
+Useful commands:
+
+```bash
+docker compose logs -f backend frontend mongodb
+docker compose down
+docker compose up --build -d
+```
+
+For the full local setup guide, read:
+
+```text
+LOCAL_SETUP.md
+```
+
+</details>
+
+## VPS Deployment
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+The recommended production-style deployment is Docker Compose on a VPS.
+
+Typical VPS flow:
+
+```bash
+git clone https://github.com/mazinxperia/AssetFlow.git assetflow
+cd assetflow
+cp .env.example .env
+nano .env
+docker compose up --build -d
+docker compose ps
+```
+
+For a direct HTTP VPS deployment, `.env` usually contains:
+
+```env
+FRONTEND_PORT=80
+JWT_SECRET=replace-this-with-a-long-random-production-secret
+CORS_ORIGINS=http://your-domain.com,http://your_vps_public_ip
+```
+
+For HTTPS/domain deployment:
+
+```env
+FRONTEND_PORT=80
+JWT_SECRET=replace-this-with-a-long-random-production-secret
+CORS_ORIGINS=https://your-domain.com,http://your-domain.com
+```
+
+For the full VPS guide, including Docker install, firewall, DNS, updates, backups, and HTTPS options, read:
+
+```text
+VPS_DEPLOYMENT.md
+```
+
+</details>
+
+## Data And Storage
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+AssetFlow stores operational data in MongoDB.
+
+Main data categories include:
+
+- users
+- employees
+- asset types
+- assets
+- disposed assets
+- transfers
+- subscriptions
+- music tracks
+- vehicles
+- vehicle files
+- settings
+- branding files
+- uploaded assets
+
+In Docker, persistence is handled through volumes:
+
+| Volume | Stores |
+| --- | --- |
+| `mongodb_data` | MongoDB database files |
+| `backend_uploads` | uploaded files |
+
+Safe stop:
+
+```bash
+docker compose down
+```
+
+Full local reset:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+Important:
+
+- `docker compose down` keeps data
+- `docker compose down -v` deletes database and uploads
+- production backups should include both MongoDB and upload volumes
+
+</details>
+
+## Security And Access Control
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+AssetFlow uses JWT-based authentication and role-based access control.
+
+### Roles
+
+| Role | Access |
+| --- | --- |
+| `SUPER_ADMIN` | Full system access, settings, users, integrations, destructive controls |
+| `ADMIN` | Write access for operational records |
+| `USER` | Read-only access |
+
+### Protected Areas
+
+Write/admin controls are guarded at both UI and backend levels.
+
+Protected areas include:
+
+- user management
+- settings
+- asset creation/editing
+- employee creation/editing
+- transfer operations
+- vehicle changes
+- subscription changes
+- system configuration
+
+### Production Checklist
+
+Before using AssetFlow publicly:
+
+- change the default admin password
+- set a strong `JWT_SECRET`
+- keep `.env` out of Git
+- expose only the frontend/reverse proxy port
+- keep MongoDB private inside Docker
+- use HTTPS for public domains
+- back up MongoDB and uploaded files
+- restrict VPS SSH access where possible
+
+</details>
+
+## Mobile App
+
+<details>
+<summary><strong>Open section</strong></summary>
+
+<br>
+
+AssetFlow includes a React Native / Expo Android companion app in:
+
+```text
+mobile/
+```
+
+The mobile app connects to the same FastAPI backend as the web app. It does not use a separate backend or database.
+
+> [!IMPORTANT]
+> The mobile app currently works as a companion client for the existing backend URL, login flow, and supported mobile screens. It has not yet been updated to include every latest web feature, so newer modules such as Vehicle Fleet, Disposed Assets, the newest dashboard widgets, and newer web-only settings may not appear inside the mobile app yet. The web dashboard remains the complete and most up-to-date AssetFlow experience.
+
+Mobile features include:
+
+- onboarding flow
+- backend URL connection setup
+- login with AssetFlow credentials
+- dashboard summary
+- asset viewing and management
+- employee viewing and management
+- subscriptions
+- inventory
+- transfers
+- user/account screens
+- offline readability for cached data
+- reconnect handling when backend is unavailable
+
+Mobile build command:
 
 ```bash
 cd mobile
@@ -388,60 +750,78 @@ npm install
 eas build -p android --profile preview
 ```
 
-Requires EAS CLI (`npm install -g eas-cli`) and an Expo account linked to the project.
+This requires EAS CLI and an Expo account.
 
----
+</details>
 
-# Security & Access Control
+## Project Structure
 
-Role-Based Access Model:
+<details>
+<summary><strong>Open section</strong></summary>
 
-### SUPER ADMIN
-- Full system access
-- Settings and integrations
-- User management
-- Asset type control
+<br>
 
-### ADMIN
-- Asset and employee management
-- Transfers
-- Reporting
-- No system-level configuration access
+```text
+AssetFlow/
+├── backend/
+│   ├── server.py              # FastAPI application and API routes
+│   ├── requirements.txt       # Python dependencies
+│   └── Dockerfile             # Backend container build
+├── frontend/
+│   ├── src/
+│   │   ├── components/        # Shared UI and layout components
+│   │   ├── context/           # Auth, theme, branding providers
+│   │   ├── pages/             # Dashboard, assets, employees, settings, etc.
+│   │   └── services/          # API clients
+│   ├── nginx.conf             # Frontend nginx and API proxy config
+│   ├── package.json           # Frontend dependencies
+│   └── Dockerfile             # Frontend production build and nginx image
+├── mobile/
+│   ├── src/                   # React Native app source
+│   ├── App.js                 # Mobile app entry
+│   └── package.json           # Mobile dependencies
+├── Screenshots/               # README screenshot assets
+├── docker-compose.yml         # Full stack Docker orchestration
+├── .env.example               # Local/VPS environment template
+├── LOCAL_SETUP.md             # Detailed local Docker instructions
+├── VPS_DEPLOYMENT.md          # Detailed VPS Docker deployment instructions
+├── package.json               # Root helper scripts
+└── README.md                  # Project documentation
+```
 
-### USER
-- Read-only access
-- View dashboards and records
-- No modification permissions
+</details>
 
-Additional safeguards:
+## Repository Notes
 
-- JWT expiration auto-redirect
-- Self-deletion prevention
-- Backend route-order validation
-- Required field enforcement
-- Unique asset tag validation
+<details>
+<summary><strong>Open section</strong></summary>
 
----
+<br>
 
-# Data Integrity Improvements
+Current documentation direction:
 
-- Duplicate asset tag prevention
-- Currency conversion correction
-- Transfer consistency enforcement
-- Backup restore assignment safeguards
-- Server-side favicon fetch implementation
-- Structured deletion controls
+- `README.md` explains the product and architecture
+- `LOCAL_SETUP.md` explains local Docker setup in detail
+- `VPS_DEPLOYMENT.md` explains VPS Docker deployment in detail
 
----
+Removed old documentation and installer direction:
 
-# Designed For
+- manual Windows installer
+- manual macOS installer
+- old cloud-only deployment guide
+- duplicate Docker deployment guide
 
-- IT departments
-- Growing startups
-- Mid-sized enterprises
-- Organizations managing structured IT inventory
-- Teams requiring traceable asset workflows
+The repo should now communicate one clear setup model:
 
----
+```text
+Use Docker.
+```
 
-AssetFlow centralizes asset visibility, improves operational control, and provides a structured foundation for scalable IT resource management — accessible from both web and mobile.
+Before publishing or handing off the project, review:
+
+- `.env` is not committed
+- screenshots are safe to show
+- default credentials are changed after first deployment
+- production VPS has backups configured
+
+</details>
