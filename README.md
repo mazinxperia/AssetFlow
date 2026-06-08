@@ -1,12 +1,39 @@
 <div align="center">
 
+<img src="./mobile/assets/logo.png" alt="AssetFlow logo" width="128" />
+
 # AssetFlow
 
-Self-hosted IT asset, employee, subscription, transfer, and vehicle fleet management platform.
+<strong>Self-hosted IT asset, employee, subscription, transfer, and vehicle fleet management platform.</strong>
 
 Built for internal teams that need clear ownership tracking, controlled asset movement, Docker-based deployment, and a modern web dashboard backed by MongoDB.
 
+<br>
+
+<a href="#quick-glance"><img alt="Quick Glance" src="https://img.shields.io/badge/Quick_Glance-0B1220?style=for-the-badge"></a>
+<a href="#screenshots"><img alt="Screenshots" src="https://img.shields.io/badge/Screenshots-0284C7?style=for-the-badge"></a>
+<a href="#local-setup"><img alt="Local Setup" src="https://img.shields.io/badge/Local_Setup-0F766E?style=for-the-badge"></a>
+<a href="#vps-deployment"><img alt="VPS Deployment" src="https://img.shields.io/badge/VPS_Deploy-4D7C0F?style=for-the-badge"></a>
+
+<br><br>
+
+<img alt="Docker" src="https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white">
+<img alt="React" src="https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white">
+<img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white">
+<img alt="MongoDB" src="https://img.shields.io/badge/MongoDB_7-47A248?style=flat-square&logo=mongodb&logoColor=white">
+
 </div>
+
+<br>
+
+<p align="center">
+  <img src="./Screenshots/Dashboard%201.png" alt="AssetFlow dashboard overview" width="420" />
+  <img src="./Screenshots/Assets%20List.png" alt="AssetFlow asset list" width="420" />
+</p>
+
+<p align="center">
+  <sub>Docker-first operations dashboard, mobile companion, and traceable asset lifecycle records in one self-hosted system.</sub>
+</p>
 
 ---
 
