@@ -224,7 +224,7 @@ Example:
 
 ```env
 FRONTEND_PORT=80
-JWT_SECRET=8e6dd3e36d9bdf18f4b4ad8bb2d3c6770f13cf42a9314cc5a53f65d44dbbdf20
+JWT_SECRET=paste-output-from-openssl-rand-hex-32-here
 CORS_ORIGINS=https://assetflow.example.com,http://assetflow.example.com
 ```
 
